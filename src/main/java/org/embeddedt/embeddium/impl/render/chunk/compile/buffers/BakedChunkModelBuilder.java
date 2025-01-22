@@ -36,6 +36,7 @@ public class BakedChunkModelBuilder implements ChunkModelBuilder {
 
     @Override
     public ChunkModelVertexConsumer asVertexConsumer(Material material) {
+        this.vertexConsumer.close();
         this.vertexConsumer.initialize(material);
         return this.vertexConsumer;
     }
