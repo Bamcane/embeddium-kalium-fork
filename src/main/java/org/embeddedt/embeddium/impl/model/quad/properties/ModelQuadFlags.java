@@ -1,5 +1,6 @@
 package org.embeddedt.embeddium.impl.model.quad.properties;
 
+import org.embeddedt.embeddium.api.util.ColorABGR;
 import org.embeddedt.embeddium.impl.model.quad.ModelQuadView;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.core.Direction;
@@ -8,28 +9,35 @@ public class ModelQuadFlags {
     /**
      * Indicates that the quad does not fully cover the given face for the model.
      */
-    public static final int IS_PARTIAL = 0b001;
+    public static final int IS_PARTIAL = (1 << 0);
 
     /**
      * Indicates that the quad is parallel to its light face.
      */
-    public static final int IS_PARALLEL = 0b010;
+    public static final int IS_PARALLEL = (1 << 1);
 
     /**
      * Indicates that the quad is aligned to the block grid.
      * This flag is only set if {@link #IS_PARALLEL} is set.
      */
-    public static final int IS_ALIGNED = 0b100;
+    public static final int IS_ALIGNED = (1 << 2);
 
     /**
      * Indicates that the quad should be shaded using vanilla's getShade logic and the light face, rather than
      * the normals of each vertex.
      */
-    public static final int IS_VANILLA_SHADED = 0b1000;
+    public static final int IS_VANILLA_SHADED = (1 << 3);
+
     /**
      * Indicates that the particle sprite on this quad can be trusted to be the only sprite it shows.
      */
     public static final int IS_TRUSTED_SPRITE = (1 << 4);
+
+    /**
+     * Indicates that this quad can use a more optimal terrain render pass based on its sprite.
+     */
+    public static final int IS_PASS_OPTIMIZABLE = (1 << 5);
+
     /**
      * Indicates that the flags are populated for the quad.
      */
@@ -46,7 +54,7 @@ public class ModelQuadFlags {
      * Calculates the properties of the given quad. This data is used later by the light pipeline in order to make
      * certain optimizations.
      */
-    public static int getQuadFlags(ModelQuadView quad, Direction face) {
+    public static int getQuadFlags(ModelQuadView quad, Direction face, int existingFlags) {
         float minX = 32.0F;
         float minY = 32.0F;
         float minZ = 32.0F;
@@ -61,7 +69,7 @@ public class ModelQuadFlags {
         }
 
         float lX = Float.NaN, lY = Float.NaN, lZ = Float.NaN;
-        boolean degenerate = false;
+        boolean degenerate = false, nonOpaqueColor = false;
 
         for (int i = 0; i < numVertices; ++i) {
             float x = quad.getX(i);
@@ -81,6 +89,10 @@ public class ModelQuadFlags {
                 lX = x;
                 lY = y;
                 lZ = z;
+            }
+
+            if (ColorABGR.unpackAlpha(quad.getColor(i)) != 255) {
+                nonOpaqueColor = true;
             }
         }
 
@@ -105,7 +117,7 @@ public class ModelQuadFlags {
             case EAST -> maxX > 0.9999F;
         };
 
-        int flags = 0;
+        int flags = existingFlags & ~(IS_PARTIAL | IS_PARALLEL | IS_ALIGNED);
 
         if (partial) {
             flags |= IS_PARTIAL;
@@ -117,6 +129,10 @@ public class ModelQuadFlags {
 
         if (aligned) {
             flags |= IS_ALIGNED;
+        }
+
+        if (!nonOpaqueColor && (flags & IS_TRUSTED_SPRITE) != 0) {
+            flags |= IS_PASS_OPTIMIZABLE;
         }
 
         flags |= IS_POPULATED;
