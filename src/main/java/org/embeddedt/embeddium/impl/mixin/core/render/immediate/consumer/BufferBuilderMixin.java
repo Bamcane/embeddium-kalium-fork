@@ -25,12 +25,17 @@ public abstract class BufferBuilderMixin implements VertexBufferWriter {
 
     @Shadow
     private int vertices;
+
+    @Shadow
+    private int elementsToFill;
+
     @Shadow
     @Final
     private int vertexSize;
 
     @Shadow
     private long vertexPointer;
+
     @Unique
     private VertexFormatDescription embeddiumFormat;
 
@@ -61,8 +66,8 @@ public abstract class BufferBuilderMixin implements VertexBufferWriter {
         }
 
         this.vertices += count;
-        // TODO - probably not needed?
-        this.vertexPointer = dst;
+        this.vertexPointer = dst + length - this.vertexSize;
+        this.elementsToFill = 0;
     }
 
     @Unique
