@@ -32,6 +32,7 @@ base {
 }
 
 repositories {
+    maven("https://maven.neoforged.net/")
     maven("https://libraries.minecraft.net")
     mavenCentral()
     maven("https://maven.fabricmc.net")
@@ -59,16 +60,9 @@ configurations {
     runtimeClasspath.get().extendsFrom(runtimeOnlyNonPublishable)
 }
 
-fun DependencyHandlerScope.compatCompileOnly(dependency: String) {
-    "compatCompileOnly"(dependency)
-}
-
 dependencies {
     // FIXME remove when NG not loading this from NF itself is fixed
-    implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
-
-    // Mods
-    compatCompileOnly("curse.maven:codechickenlib-242818:${"codechicken_fileid"()}")
+    // implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
 
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")

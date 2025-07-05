@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "embeddium",
+  "id": "kalium",
   "version": "${version}",
-  "name": "Embeddium",
-  "description": "Embeddium",
-  "authors": [ "embeddedt" ],
+  "name": "Kalium",
+  "description": "Kalium",
+  "authors": [ "Bamcane" ],
   "contributors": [
     "@jellysquid3",
     "@IMS212",
@@ -25,10 +25,13 @@
     "@douira",
     "@burgerindividual",
     "@TwistedZero",
-    "@Leo40Git"
+    "@Leo40Git",
+    "@embeddedt",
+    "@FiniteReality",
+    "And other contributors in the project"
   ],
   "contact": {
-    "sources": "https://github.com/embeddedt/embeddium"
+    "sources": "https://github.com/Bamcane/embeddium-kalium-fork"
   },
   "license": "LGPL-3.0-only",
   "icon": "icon.png",

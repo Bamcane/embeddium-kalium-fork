@@ -1,5 +1,8 @@
 <img src="src/main/resources/icon.png" width="128">
 
+# Kalium
+Kalium is an unofficial fork of Embeddium in order to support new versions.
+
 # Embeddium
 
 [![Modrinth Downloads](https://img.shields.io/modrinth/dt/sk9rgfiA?label=Modrinth&labelColor=%232D2D2D)](https://modrinth.com/mod/embeddium)

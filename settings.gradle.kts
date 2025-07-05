@@ -19,4 +19,4 @@ pluginManagement {
 
 val minecraft_version: String by settings
 
-rootProject.name = "embeddium-${minecraft_version}"
+rootProject.name = "kalium-${minecraft_version}"

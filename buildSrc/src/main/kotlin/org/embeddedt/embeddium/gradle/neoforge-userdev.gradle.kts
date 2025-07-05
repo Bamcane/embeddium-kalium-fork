@@ -28,10 +28,6 @@ repositories {
     }
 }
 
-// FIXME hack to prevent LWJGL from being resolved from the Neo maven, which doesn't contain all needed variants
-repositories["NeoForm Maven"].content {
-    excludeGroupByRegex("org\\.lwjgl.*")
-}
 
 minecraft {
     accessTransformers {
@@ -90,12 +86,4 @@ fun fAPIModule(name: String): Dependency {
 
 dependencies {
     implementation("net.neoforged:neoforge:${project.properties["forge_version"].toString()}")
-
-    // Fabric API
-    "fabricCompileOnly"(fAPIModule("fabric-api-base"))
-    "fabricCompileOnly"(fAPIModule("fabric-block-view-api-v2"))
-    "fabricCompileOnly"(fAPIModule("fabric-renderer-api-v1"))
-    "fabricCompileOnly"(fAPIModule("fabric-rendering-data-attachment-v1"))
-    "fabricCompileOnly"(fAPIModule("fabric-renderer-indigo"))
-    compileOnly("net.fabricmc:fabric-loader:${project.properties["fabric_loader_version"].toString()}")
 }
