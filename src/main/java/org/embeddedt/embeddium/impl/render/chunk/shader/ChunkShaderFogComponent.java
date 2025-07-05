@@ -1,9 +1,12 @@
 package org.embeddedt.embeddium.impl.render.chunk.shader;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import org.embeddedt.embeddium.impl.gl.shader.ShaderBindingContext;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformFloat;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformFloat4v;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformInt;
+import org.embeddedt.embeddium.impl.render.chunk.fog.FogService;
+
+import java.util.ServiceLoader;
 
 /**
  * These shader implementations try to remain compatible with the deprecated fixed function pipeline by manually
@@ -15,8 +18,8 @@ import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformInt;
  * but as the name implies, this only works on graphics cards produced by NVIDIA. The shader implementation however does
  * not depend on any vendor-specific extensions and is written using very simple GLSL code.
  */
-public abstract class ChunkShaderFogComponent {
-    public abstract void setup();
+public abstract class ChunkShaderFogComponent implements ChunkShaderComponent {
+    public static final FogService FOG_SERVICE = ServiceLoader.load(FogService.class).findFirst().orElseThrow();
 
     public static class None extends ChunkShaderFogComponent {
         public None(ShaderBindingContext context) {
@@ -29,8 +32,23 @@ public abstract class ChunkShaderFogComponent {
         }
     }
 
+    public static class Exp2 extends ChunkShaderFogComponent {
+        private final GlUniformFloat4v uFogColor;
+        private final GlUniformFloat uFogDensity;
+
+        public Exp2(ShaderBindingContext context) {
+            this.uFogColor = context.bindUniform("u_FogColor", GlUniformFloat4v::new);
+            this.uFogDensity = context.bindUniform("u_FogDensity", GlUniformFloat::new);
+        }
+
+        @Override
+        public void setup() {
+            this.uFogColor.set(FOG_SERVICE.getFogColor());
+            this.uFogDensity.set(FOG_SERVICE.getFogDensity());
+        }
+    }
+
     public static class Smooth extends ChunkShaderFogComponent {
-        private final float[] fogColorBuffer;
         private final GlUniformFloat4v uFogColor;
 
         private final GlUniformInt uFogShape;
@@ -38,7 +56,6 @@ public abstract class ChunkShaderFogComponent {
         private final GlUniformFloat uFogEnd;
 
         public Smooth(ShaderBindingContext context) {
-            this.fogColorBuffer = new float[4];
             this.uFogColor = context.bindUniform("u_FogColor", GlUniformFloat4v::new);
             this.uFogShape = context.bindUniform("u_FogShape", GlUniformInt::new);
             this.uFogStart = context.bindUniform("u_FogStart", GlUniformFloat::new);
@@ -47,16 +64,11 @@ public abstract class ChunkShaderFogComponent {
 
         @Override
         public void setup() {
-            var fogProperties = RenderSystem.getShaderFog();
-            fogColorBuffer[0] = fogProperties.red();
-            fogColorBuffer[1] = fogProperties.green();
-            fogColorBuffer[2] = fogProperties.blue();
-            fogColorBuffer[3] = fogProperties.alpha();
+            this.uFogColor.set(FOG_SERVICE.getFogColor());
+            this.uFogShape.set(FOG_SERVICE.getFogShapeIndex());
 
-            this.uFogColor.set(fogColorBuffer);
-            this.uFogShape.set(fogProperties.shape().getIndex());
-            this.uFogStart.setFloat(fogProperties.start());
-            this.uFogEnd.setFloat(fogProperties.end());
+            this.uFogStart.set(FOG_SERVICE.getFogStart());
+            this.uFogEnd.set(FOG_SERVICE.getFogEnd());
         }
     }
 

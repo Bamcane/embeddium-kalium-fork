@@ -5,6 +5,8 @@ import org.embeddedt.embeddium.impl.gui.widgets.AbstractWidget;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.util.Mth;
 
 import java.util.function.Consumer;
@@ -59,21 +61,21 @@ public class ScrollBarComponent extends AbstractWidget {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.dim.containsCursor(mouseX, mouseY)) {
-            if (this.scrollThumb.containsCursor(mouseX, mouseY)) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isMouseClick) {
+        if (this.dim.containsCursor(event.x(), event.y())) {
+            if (this.scrollThumb.containsCursor(event.x(), event.y())) {
                 if (this.mode == Mode.VERTICAL) {
-                    this.scrollThumbClickOffset = (int) (mouseY - (this.scrollThumb.y() + this.scrollThumb.height() / 2));
+                    this.scrollThumbClickOffset = (int) (event.y() - (this.scrollThumb.y() + this.scrollThumb.height() / 2));
                 } else {
-                    this.scrollThumbClickOffset = (int) (mouseX - (this.scrollThumb.x() + this.scrollThumb.width() / 2));
+                    this.scrollThumbClickOffset = (int) (event.x() - (this.scrollThumb.x() + this.scrollThumb.width() / 2));
                 }
                 this.isDragging = true;
             } else {
                 int value;
                 if (this.mode == Mode.VERTICAL) {
-                    value = (int) ((mouseY - this.dim.y() - (this.scrollThumb.height() / 2)) / (this.dim.height() - this.scrollThumb.height()) * this.maxScrollBarOffset);
+                    value = (int) ((event.y() - this.dim.y() - (this.scrollThumb.height() / 2)) / (this.dim.height() - this.scrollThumb.height()) * this.maxScrollBarOffset);
                 } else {
-                    value = (int) ((mouseX - this.dim.x() - (this.scrollThumb.width() / 2)) / (this.dim.width() - this.scrollThumb.width()) * this.maxScrollBarOffset);
+                    value = (int) ((event.x() - this.dim.x() - (this.scrollThumb.width() / 2)) / (this.dim.width() - this.scrollThumb.width()) * this.maxScrollBarOffset);
                 }
                 this.setOffset(value);
                 this.isDragging = false;
@@ -85,15 +87,15 @@ public class ScrollBarComponent extends AbstractWidget {
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0) {
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (event.button() == 0) {
             this.isDragging = false;
         }
         return false;
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent event, double mouseX, double mouseY) {
         if (this.isDragging) {
             int value;
             if (this.mode == Mode.VERTICAL) {
@@ -135,23 +137,23 @@ public class ScrollBarComponent extends AbstractWidget {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyEvent event) {
         if (!this.isFocused())
             return false;
 
         if (this.mode == Mode.VERTICAL) {
-            if (keyCode == InputConstants.KEY_UP) {
+            if (event.key() == InputConstants.KEY_UP) {
                 this.setOffset(this.getOffset() - SCROLL_OFFSET);
                 return true;
-            } else if (keyCode == InputConstants.KEY_DOWN) {
+            } else if (event.key() == InputConstants.KEY_DOWN) {
                 this.setOffset(this.getOffset() + SCROLL_OFFSET);
                 return true;
             }
         } else {
-            if (keyCode == InputConstants.KEY_LEFT) {
+            if (event.key() == InputConstants.KEY_LEFT) {
                 this.setOffset(this.getOffset() - SCROLL_OFFSET);
                 return true;
-            } else if (keyCode == InputConstants.KEY_RIGHT) {
+            } else if (event.key() == InputConstants.KEY_RIGHT) {
                 this.setOffset(this.getOffset() + SCROLL_OFFSET);
                 return true;
             }

@@ -1,6 +1,6 @@
 package org.embeddedt.embeddium_integrity;
 
-import net.neoforged.fml.loading.LoadingModList;
+import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.loading.moddiscovery.ModFileInfo;
 import net.neoforged.neoforgespi.language.IModInfo;
 import org.apache.maven.artifact.versioning.Restriction;
@@ -19,8 +19,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -165,12 +163,11 @@ public class MixinTaintDetector implements IExtension {
         id = "[unknown]";
         // Actually compute the ID
         String[] components = pkg.split("\\.");
-        for(ModFileInfo mfi : LoadingModList.get().getModFiles()) {
+        for(ModFileInfo mfi : FMLLoader.getCurrent().getLoadingModList().getModFiles()) {
             if(mfi.getMods().isEmpty()) {
                 continue;
             }
-            Path path = mfi.getFile().findResource(components);
-            if(path != null && Files.exists(path)) {
+            if(mfi.getFile().getContents().containsFile(String.join("/", components))) {
                 id = mfi.getMods().get(0).getModId();
                 break;
             }
@@ -209,7 +206,7 @@ public class MixinTaintDetector implements IExtension {
             if(MOD_ID_WHITELIST.contains(modId)) {
                 continue;
             }
-            var file = LoadingModList.get().getModFileById(modId);
+            var file = FMLLoader.getCurrent().getLoadingModList().getModFileById(modId);
             if(file == null) {
                 continue;
             }

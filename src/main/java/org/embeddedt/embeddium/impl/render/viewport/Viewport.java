@@ -1,43 +1,40 @@
 package org.embeddedt.embeddium.impl.render.viewport;
 
 import org.embeddedt.embeddium.impl.render.viewport.frustum.Frustum;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.SectionPos;
-import net.minecraft.world.phys.AABB;
+import org.embeddedt.embeddium.impl.util.PositionUtil;
+import org.joml.RoundingMode;
 import org.joml.Vector3d;
+import org.joml.Vector3i;
+import org.joml.Vector3ic;
 
 public final class Viewport {
     private final Frustum frustum;
     private final CameraTransform transform;
 
-    private final SectionPos chunkCoords;
-    private final BlockPos blockCoords;
+    private final Vector3i chunkCoords;
+    private final Vector3i blockCoords;
 
     public Viewport(Frustum frustum, Vector3d position) {
         this.frustum = frustum;
         this.transform = new CameraTransform(position.x, position.y, position.z);
 
-        this.chunkCoords = SectionPos.of(
-                SectionPos.posToSectionCoord(position.x),
-                SectionPos.posToSectionCoord(position.y),
-                SectionPos.posToSectionCoord(position.z)
+        this.chunkCoords = new Vector3i(
+                PositionUtil.posToSectionCoord(position.x),
+                PositionUtil.posToSectionCoord(position.y),
+                PositionUtil.posToSectionCoord(position.z)
         );
 
-        this.blockCoords = BlockPos.containing(position.x, position.y, position.z);
+        this.blockCoords = new Vector3i(position.x, position.y, position.z, RoundingMode.FLOOR);
     }
 
-    public boolean isBoxVisible(AABB box) {
-        if (box.isInfinite()) {
-            return true;
-        }
-
+    public boolean isBoxVisible(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
         return this.frustum.testAab(
-                (float)(box.minX - this.transform.intX) - this.transform.fracX,
-                (float)(box.minY - this.transform.intY) - this.transform.fracY,
-                (float)(box.minZ - this.transform.intZ) - this.transform.fracZ,
-                (float)(box.maxX - this.transform.intX) - this.transform.fracX,
-                (float)(box.maxY - this.transform.intY) - this.transform.fracY,
-                (float)(box.maxZ - this.transform.intZ) - this.transform.fracZ
+                (float)(minX - this.transform.intX) - this.transform.fracX,
+                (float)(minY - this.transform.intY) - this.transform.fracY,
+                (float)(minZ - this.transform.intZ) - this.transform.fracZ,
+                (float)(maxX - this.transform.intX) - this.transform.fracX,
+                (float)(maxY - this.transform.intY) - this.transform.fracY,
+                (float)(maxZ - this.transform.intZ) - this.transform.fracZ
         );
     }
 
@@ -65,11 +62,11 @@ public final class Viewport {
         return this.transform;
     }
 
-    public SectionPos getChunkCoord() {
+    public Vector3ic getChunkCoord() {
         return this.chunkCoords;
     }
 
-    public BlockPos getBlockCoord() {
+    public Vector3ic getBlockCoord() {
         return this.blockCoords;
     }
 }

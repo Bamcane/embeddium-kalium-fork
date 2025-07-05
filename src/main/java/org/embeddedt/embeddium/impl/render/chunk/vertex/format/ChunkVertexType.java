@@ -1,6 +1,10 @@
 package org.embeddedt.embeddium.impl.render.chunk.vertex.format;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.embeddedt.embeddium.impl.gl.attribute.GlVertexFormat;
+import org.jetbrains.annotations.MustBeInvokedByOverriders;
 
 public interface ChunkVertexType {
     /**
@@ -18,7 +22,20 @@ public interface ChunkVertexType {
      */
     float getTextureScale();
 
-    GlVertexFormat<ChunkMeshAttribute> getVertexFormat();
+    GlVertexFormat getVertexFormat();
 
-    ChunkVertexEncoder getEncoder();
+    /**
+     * {@return a newly constructed instance of a vertex encoder for the given vertex type}
+     */
+    ChunkVertexEncoder createEncoder();
+
+    @MustBeInvokedByOverriders
+    default Map<String, String> getDefines() {
+        var defines = new HashMap<String, String>();
+        defines.put("VERT_POS_SCALE", String.valueOf(this.getPositionScale()));
+        defines.put("VERT_POS_OFFSET", String.valueOf(this.getPositionOffset()));
+        defines.put("VERT_TEX_SCALE", String.valueOf(this.getTextureScale()));
+
+        return defines;
+    }
 }

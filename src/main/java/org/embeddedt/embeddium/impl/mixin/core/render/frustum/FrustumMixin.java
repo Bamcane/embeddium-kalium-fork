@@ -6,9 +6,7 @@ import org.embeddedt.embeddium.impl.render.viewport.Viewport;
 import org.embeddedt.embeddium.impl.render.viewport.ViewportProvider;
 import org.joml.FrustumIntersection;
 import org.joml.Vector3d;
-import org.spongepowered.asm.mixin.Final;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.*;
 
 @Mixin(Frustum.class)
 public class FrustumMixin implements ViewportProvider {
@@ -24,6 +22,10 @@ public class FrustumMixin implements ViewportProvider {
     @Shadow
     @Final
     private FrustumIntersection intersection;
+
+    @Shadow
+    @Final
+    private org.joml.Matrix4f matrix;
 
     @Override
     public Viewport sodium$createViewport() {

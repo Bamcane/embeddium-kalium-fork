@@ -2,7 +2,6 @@ package org.embeddedt.embeddium.impl.render.chunk.vertex.builder;
 
 import org.embeddedt.embeddium.impl.render.chunk.terrain.material.Material;
 import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexEncoder;
-import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexType;
 import org.embeddedt.embeddium.impl.render.chunk.sorting.TranslucentQuadAnalyzer;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.system.MemoryUtil;
@@ -20,27 +19,27 @@ public class ChunkMeshBufferBuilder {
     private int capacity;
     private int sectionIndex;
 
-    public ChunkMeshBufferBuilder(ChunkVertexType vertexType, int initialCapacity, boolean collectSortState) {
-        this.encoder = vertexType.getEncoder();
-        this.stride = vertexType.getVertexFormat().getStride();
+    public ChunkMeshBufferBuilder(ChunkVertexEncoder encoder, int stride, int initialCapacity, boolean collectSortState) {
+        this.encoder = encoder;
+        this.stride = stride;
 
         this.buffer = null;
 
-        this.capacity = initialCapacity;
+        this.capacity = 0;
         this.initialCapacity = initialCapacity;
 
         this.analyzer = collectSortState ? new TranslucentQuadAnalyzer() : null;
     }
 
     public void push(ChunkVertexEncoder.Vertex[] vertices, Material material) {
-        var vertexStart = this.count;
-        var vertexCount = vertices.length;
+        var vertexStart = this.count * this.stride;
+        var vertexSize = vertices.length * this.stride;
 
-        if (this.count + vertexCount >= this.capacity) {
-            this.grow(this.stride * vertexCount);
+        if (vertexStart + vertexSize >= this.capacity) {
+            this.grow(vertexSize);
         }
 
-        long ptr = MemoryUtil.memAddress(this.buffer, this.count * this.stride);
+        long ptr = MemoryUtil.memAddress(this.buffer, vertexStart);
 
         if (this.analyzer != null) {
             for (ChunkVertexEncoder.Vertex vertex : vertices) {
@@ -52,20 +51,17 @@ public class ChunkMeshBufferBuilder {
             ptr = this.encoder.write(ptr, material, vertex, this.sectionIndex);
         }
 
-        this.count += vertexCount;
+        this.count += vertices.length;
     }
 
-    private void grow(int len) {
-        // The new capacity will at least as large as the write it needs to service
-        int cap = Math.max(this.capacity * 2, this.capacity + len);
+    private void grow(int bytesNeeded) {
+        // Grow by a factor of 2, or by however many bytes more we need, whichever is larger.
+        int newCapacity = Math.max(this.capacity * 2, this.capacity + bytesNeeded);
+        // Ensure we allocate at least initialCapacity bytes
+        newCapacity = Math.max(newCapacity, this.initialCapacity);
 
-        // Update the buffer and capacity now
-        this.setBufferSize(cap * this.stride);
-    }
-
-    private void setBufferSize(int capacity) {
-        this.buffer = MemoryUtil.memRealloc(this.buffer, capacity * this.stride);
-        this.capacity = capacity;
+        this.buffer = MemoryUtil.memRealloc(this.buffer, newCapacity);
+        this.capacity = newCapacity;
     }
 
     public void start(int sectionIndex) {
@@ -74,13 +70,17 @@ public class ChunkMeshBufferBuilder {
         if(this.analyzer != null) {
             this.analyzer.clear();
         }
-
-        this.setBufferSize(this.initialCapacity);
     }
 
     @Nullable
     public TranslucentQuadAnalyzer.SortState getSortState() {
         return this.analyzer != null ? this.analyzer.getSortState() : null;
+    }
+
+    public void resetSortState() {
+        if (this.analyzer != null) {
+            this.analyzer.clear();
+        }
     }
 
     public void destroy() {
@@ -89,6 +89,9 @@ public class ChunkMeshBufferBuilder {
         }
 
         this.buffer = null;
+        this.capacity = 0;
+
+        this.resetSortState();
     }
 
     public boolean isEmpty() {

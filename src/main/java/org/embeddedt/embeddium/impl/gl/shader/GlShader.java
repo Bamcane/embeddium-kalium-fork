@@ -1,11 +1,11 @@
 package org.embeddedt.embeddium.impl.gl.shader;
 
-import com.mojang.blaze3d.platform.GlStateManager;
 import org.embeddedt.embeddium.impl.gl.GlObject;
-import net.minecraft.resources.ResourceLocation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.embeddedt.embeddium.impl.gl.debug.GLDebug;
 import org.lwjgl.opengl.GL20C;
+import org.lwjgl.opengl.GL43C;
 
 /**
  * A compiled OpenGL shader object.
@@ -13,9 +13,9 @@ import org.lwjgl.opengl.GL20C;
 public class GlShader extends GlObject {
     private static final Logger LOGGER = LogManager.getLogger(GlShader.class);
 
-    private final ResourceLocation name;
+    private final String name;
 
-    public GlShader(ShaderType type, ResourceLocation name, String src) {
+    public GlShader(ShaderType type, String name, String src) {
         this.name = name;
 
         int handle = GL20C.glCreateShader(type.id);
@@ -28,22 +28,23 @@ public class GlShader extends GlObject {
             LOGGER.warn("Shader compilation log for " + this.name + ": " + log);
         }
 
-        int result = GlStateManager.glGetShaderi(handle, GL20C.GL_COMPILE_STATUS);
+        int result = GL20C.glGetShaderi(handle, GL20C.GL_COMPILE_STATUS);
 
         if (result != GL20C.GL_TRUE) {
             throw new RuntimeException("Shader compilation failed, see log for details");
         }
 
         this.setHandle(handle);
+
+        GLDebug.nameObject(GL43C.GL_SHADER, handle, name);
     }
 
-    public ResourceLocation getName() {
+    public String getName() {
         return this.name;
     }
 
-    public void delete() {
+    @Override
+    protected void destroyInternal() {
         GL20C.glDeleteShader(this.handle());
-
-        this.invalidateHandle();
     }
 }

@@ -5,8 +5,9 @@ import org.embeddedt.embeddium.impl.gui.options.TextProvider;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.navigation.CommonInputs;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.apache.commons.lang3.Validate;
 
@@ -106,9 +107,9 @@ public class CyclingControl<T extends Enum<T>> implements Control<T> {
         }
 
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (this.option.isAvailable() && button == 0 && this.dim.containsCursor(mouseX, mouseY)) {
-                cycleControl(Screen.hasShiftDown());
+        public boolean mouseClicked(MouseButtonEvent event, boolean isMouseClick) {
+            if (this.option.isAvailable() && event.button() == 0 && this.dim.containsCursor(event.x(), event.y())) {
+                cycleControl(event.hasShiftDown());
                 this.playClickSound();
 
                 return true;
@@ -118,11 +119,11 @@ public class CyclingControl<T extends Enum<T>> implements Control<T> {
         }
 
         @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        public boolean keyPressed(KeyEvent event) {
             if (!isFocused()) return false;
 
-            if (CommonInputs.selected(keyCode)) {
-                cycleControl(Screen.hasShiftDown());
+            if (event.isSelection()) {
+                cycleControl(event.hasShiftDown());
                 return true;
             }
 

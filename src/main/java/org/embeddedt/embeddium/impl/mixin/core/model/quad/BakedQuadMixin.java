@@ -1,11 +1,10 @@
 package org.embeddedt.embeddium.impl.mixin.core.model.quad;
 
 import org.embeddedt.embeddium.impl.model.quad.BakedQuadView;
-import org.embeddedt.embeddium.impl.model.quad.ModelQuad;
 import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
 import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFlags;
+import org.embeddedt.embeddium.impl.util.ModernQuadFacing;
 import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevel;
-import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevelHolder;
 import org.embeddedt.embeddium.impl.util.ModelQuadUtil;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -19,7 +18,7 @@ import org.spongepowered.asm.mixin.Unique;
 import static org.embeddedt.embeddium.impl.util.ModelQuadUtil.*;
 
 @Mixin(BakedQuad.class)
-public class BakedQuadMixin implements BakedQuadView {
+public abstract class BakedQuadMixin implements BakedQuadView {
     @Shadow
     @Final
     protected int[] vertices;
@@ -36,13 +35,23 @@ public class BakedQuadMixin implements BakedQuadView {
     @Final
     protected Direction direction; // This is really the light face, but we can't rename it.
 
+    //? if >=1.16 {
     @Shadow
     @Final
     private boolean shade;
+    //?}
 
+    //? if forgelike && <1.16 {
+    /*@Shadow
+    @Final
+    private boolean applyDiffuseLighting;
+    *///?}
+
+    //? if forgelike && >=1.19 {
     @Shadow(remap = false)
     @Final
     private boolean hasAmbientOcclusion;
+    //?}
 
     @Unique
     private int flags;
@@ -74,7 +83,7 @@ public class BakedQuadMixin implements BakedQuadView {
     }
 
     @Override
-    public TextureAtlasSprite getSprite() {
+    public Object kalium$getSprite() {
         return this.sprite;
     }
 
@@ -102,7 +111,7 @@ public class BakedQuadMixin implements BakedQuadView {
     public int getFlags() {
         int f = this.flags;
         if ((f & ModelQuadFlags.IS_POPULATED) == 0) {
-            this.flags = f = ModelQuadFlags.getQuadFlags(this, direction, f);
+            this.flags = f = ModelQuadFlags.getQuadFlags(this, getLightFace(), f);
         }
         return f;
     }
@@ -115,7 +124,7 @@ public class BakedQuadMixin implements BakedQuadView {
     @Override
     public @Nullable SpriteTransparencyLevel getTransparencyLevel() {
         if (this.sprite != null && (this.flags & ModelQuadFlags.IS_TRUSTED_SPRITE) != 0) {
-            return SpriteTransparencyLevelHolder.getTransparencyLevel(this.sprite);
+            return SpriteTransparencyLevel.Holder.getTransparencyLevel(this.sprite);
         } else {
             return null;
         }
@@ -145,18 +154,30 @@ public class BakedQuadMixin implements BakedQuadView {
     }
 
     @Override
-    public Direction getLightFace() {
-        return this.direction;
+    public ModelQuadFacing getLightFace() {
+        return ModernQuadFacing.fromDirection(this.direction);
     }
 
     @Override
     @Unique(silent = true) // The target class has a function with the same name in a remapped environment
     public boolean hasShade() {
+        //? if >=1.16 {
         return this.shade;
+        //?} else if forgelike && <1.16 {
+        /*return this.applyDiffuseLighting;
+        *///?} else
+        /*return false;*/
     }
 
+    //? if forgelike && >=1.19 {
     @Override
     public boolean hasAmbientOcclusion() {
         return this.hasAmbientOcclusion;
+    }
+    //?}
+
+    @Override
+    public int getVerticesCount() {
+        return this.vertices.length / 8;
     }
 }

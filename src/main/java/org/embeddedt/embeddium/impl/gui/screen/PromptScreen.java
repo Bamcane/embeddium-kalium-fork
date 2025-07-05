@@ -50,7 +50,7 @@ public class PromptScreen extends Screen {
     }
 
     @Override
-    protected void renderBlurredBackground() {
+    protected void renderBlurredBackground(GuiGraphics guiGraphics) {
         // Disable the blur
     }
 
@@ -58,21 +58,17 @@ public class PromptScreen extends Screen {
         // First, render the old screen. This gives the illusion of the prompt being on top.
         this.prevScreen.render(drawContext, -1, -1, delta);
 
-        var matrices = drawContext.pose();
-        matrices.pushPose();
-        matrices.translate(0.0f, 0.0f, 1000.0f);
-
         drawContext.fill(0, 0, prevScreen.width, prevScreen.height, 0x70090909);
-
-        matrices.translate(0.0f, 0.0f, 50.0f);
 
         int boxX = (prevScreen.width / 2) - (promptWidth / 2);
         int boxY = (prevScreen.height / 2) - (promptHeight / 2);
 
         drawContext.fill(boxX, boxY, boxX + promptWidth, boxY + promptHeight, 0xFF171717);
-        drawContext.renderOutline(boxX, boxY, promptWidth, promptHeight, 0xFF121212);
-
-        matrices.translate(0.0f, 0.0f, 50.0f);
+        int borderColor = 0xFF121212;
+        drawContext.fill(boxX, boxY, boxX + promptWidth, boxY + 1, borderColor);
+        drawContext.fill(boxX, boxY + promptHeight - 1, boxX + promptWidth, boxY + promptHeight, borderColor);
+        drawContext.fill(boxX, boxY, boxX + 1, boxY + promptHeight, borderColor);
+        drawContext.fill(boxX + promptWidth - 1, boxY, boxX + promptWidth, boxY + promptHeight, borderColor);
 
         int padding = 5;
 
@@ -80,7 +76,6 @@ public class PromptScreen extends Screen {
         int textY = boxY + padding;
 
         int textMaxWidth = promptWidth - (padding * 2);
-        int textMaxHeight = promptHeight - (padding * 2);
 
         var textRenderer = Minecraft.getInstance().font;
 
@@ -96,8 +91,6 @@ public class PromptScreen extends Screen {
         }
 
         super.render(drawContext, mouseX, mouseY, delta);
-
-        matrices.popPose();
     }
 
     private static FlatButtonWidget.Style createButtonStyle() {

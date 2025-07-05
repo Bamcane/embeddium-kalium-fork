@@ -1,32 +1,33 @@
 package org.embeddedt.embeddium.impl.render.chunk.shader;
 
 import org.embeddedt.embeddium.impl.gl.shader.ShaderConstants;
-import org.embeddedt.embeddium.impl.render.ShaderModBridge;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
-import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkMeshFormats;
-import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexType;
 
-public record ChunkShaderOptions(ChunkFogMode fog, TerrainRenderPass pass, ChunkVertexType vertexType) {
+import java.util.List;
+
+public record ChunkShaderOptions(List<ChunkShaderComponent.Factory<?>> components, TerrainRenderPass pass) {
+
     public ShaderConstants constants() {
         ShaderConstants.Builder constants = ShaderConstants.builder();
-        constants.addAll(this.fog.getDefines());
+        for (var component : components) {
+            constants.addAll(component.getDefines());
+        }
 
         if (this.pass.supportsFragmentDiscard()) {
             constants.add("USE_FRAGMENT_DISCARD");
         }
 
-        // Embeddium: indicate whether compact vertex format is disabled to shaders
-        if(this.vertexType != ChunkMeshFormats.VANILLA_LIKE) {
-            constants.add("USE_VERTEX_COMPRESSION");
+        if (this.pass.hasNoLightmap()) {
+            constants.add("CELERITAS_NO_LIGHTMAP");
         }
 
-        constants.add("VERT_POS_SCALE", String.valueOf(this.vertexType.getPositionScale()));
-        constants.add("VERT_POS_OFFSET", String.valueOf(this.vertexType.getPositionOffset()));
-        constants.add("VERT_TEX_SCALE", String.valueOf(this.vertexType.getTextureScale()));
+        constants.addAll(pass.extraDefines());
 
-        if(!ShaderModBridge.emulateLegacyColorBrightnessFormat()) {
-            constants.add("USE_VANILLA_COLOR_FORMAT");
-        }
+        var vertexType = pass.vertexType();
+        var primitiveType = pass.primitiveType();
+
+        vertexType.getDefines().forEach(constants::add);
+        constants.addAll(primitiveType.getDefines());
 
         return constants.build();
     }

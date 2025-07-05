@@ -177,15 +177,12 @@ public class OptionPageFrame extends AbstractFrame {
             boxY = dim.getLimitY();
         }
 
-        drawContext.pose().pushPose();
-        drawContext.pose().translate(0, 0, 90);
         this.drawRect(drawContext, boxX, boxY, boxX + boxWidth, boxY + boxHeight, 0xE0000000);
         this.drawBorder(drawContext, boxX, boxY, boxX + boxWidth, boxY + boxHeight, DefaultColors.ELEMENT_ACTIVATED);
 
         for (int i = 0; i < tooltip.size(); i++) {
             drawContext.drawString(Minecraft.getInstance().font, tooltip.get(i), boxX + textPadding, boxY + textPadding + (i * 12), 0xFFFFFFFF, true);
         }
-        drawContext.pose().popPose();
     }
 
     @Override

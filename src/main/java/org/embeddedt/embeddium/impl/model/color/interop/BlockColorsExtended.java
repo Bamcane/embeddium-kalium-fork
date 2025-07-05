@@ -12,10 +12,10 @@ public interface BlockColorsExtended {
     }
 
     static ReferenceSet<Block> getOverridenVanillaBlocks(BlockColors blockColors) {
-        return ((BlockColorsExtended) blockColors).sodium$getOverridenVanillaBlocks();
+        return ((BlockColorsExtended) blockColors).embeddium$getOverridenVanillaBlocks();
     }
 
     Reference2ReferenceMap<Block, BlockColor> sodium$getProviders();
 
-    ReferenceSet<Block> sodium$getOverridenVanillaBlocks();
+    ReferenceSet<Block> embeddium$getOverridenVanillaBlocks();
 }

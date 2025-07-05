@@ -1,14 +1,17 @@
 package org.embeddedt.embeddium.impl.mixin.features.textures.mipmaps;
 
+import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.platform.NativeImage;
-import net.minecraft.util.ARGB;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import org.embeddedt.embeddium.api.util.ColorARGB;
 import org.embeddedt.embeddium.impl.util.NativeImageHelper;
 import org.embeddedt.embeddium.impl.util.color.ColorSRGB;
 import net.minecraft.client.Minecraft;
+//? if >=1.20
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.resources.ResourceLocation;
 import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevel;
-import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevelHolder;
 import org.lwjgl.system.MemoryUtil;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Final;
@@ -22,19 +25,40 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 /**
  * This Mixin is partially ported from Iris at <a href="https://github.com/IrisShaders/Iris/blob/41095ac23ea0add664afd1b85c414d1f1ed94066/src/main/java/net/coderbot/iris/mixin/bettermipmaps/MixinTextureAtlasSprite.java">MixinTextureAtlasSprite</a>.
  */
+//? if >=1.20 {
 @Mixin(SpriteContents.class)
-public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
+//?} else
+/*@Mixin(TextureAtlasSprite.class)*/
+public class SpriteContentsMixin implements SpriteTransparencyLevel.Holder {
+    //? if >=1.20 {
     @Mutable
     @Shadow
     @Final
     private NativeImage originalImage;
+    //?}
 
+    //? if >=1.17 {
     @Shadow
+    @Mutable
     @Final
     private ResourceLocation name;
+    //?} else {
+    /*@Shadow
+    @Mutable
+    @Final
+    private TextureAtlasSprite.Info info;
+    *///?}
 
     @Unique
     private SpriteTransparencyLevel embeddium$transparencyLevel;
+
+
+    private static int getMipmapLevels() {
+        //? if >=1.19 {
+        return Minecraft.getInstance().options.mipmapLevels().get();
+        //?} else
+        /*return Minecraft.getInstance().options.mipmapLevels;*/
+    }
 
     // While Fabric allows us to @Inject into the constructor here, that's just a specific detail of FabricMC's mixin
     // fork. Upstream Mixin doesn't allow arbitrary @Inject usage in constructor. However, we can use @ModifyVariable
@@ -44,14 +68,34 @@ public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
     // support Forge, since this works well on Fabric too, it's fine to ensure that the diff between Fabric and Forge
     // can remain minimal. Being less dependent on specific details of Fabric is good, since it means we can be more
     // cross-platform.
-    @Redirect(method = "<init>", at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/texture/SpriteContents;originalImage:Lcom/mojang/blaze3d/platform/NativeImage;", opcode = Opcodes.PUTFIELD))
-    private void sodium$beforeGenerateMipLevels(SpriteContents instance, NativeImage nativeImage, ResourceLocation identifier) {
+    //? if >=1.20 {
+    @Redirect(method = "/<init>/", at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/texture/SpriteContents;originalImage:Lcom/mojang/blaze3d/platform/NativeImage;", opcode = Opcodes.PUTFIELD))
+    private void sodium$beforeGenerateMipLevels(SpriteContents instance, NativeImage nativeImage, @Local(ordinal = 0, argsOnly = true) ResourceLocation identifier) {
         // Only fill in transparent colors if mipmaps are on and the texture name does not contain "leaves".
         // We're injecting after the "name" field has been set, so this is safe even though we're in a constructor.
-        embeddium$processTransparentImages(nativeImage, Minecraft.getInstance().options.mipmapLevels().get() > 0 && !this.name.getPath().contains("leaves"));
+        embeddium$processTransparentImages(nativeImage, getMipmapLevels() > 0 && this.name.getPath().startsWith("block/") && !this.name.getPath().contains("leaves"));
 
         this.originalImage = nativeImage;
     }
+    //?} else if >=1.17 {
+    /*@Redirect(method = "<init>", at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;name:Lnet/minecraft/resources/ResourceLocation;", opcode = Opcodes.PUTFIELD))
+    private void sodium$beforeGenerateMipLevels(TextureAtlasSprite instance, ResourceLocation name, TextureAtlas pAtlas, TextureAtlasSprite.Info pSpriteInfo, int pMipLevel, int pStorageX, int pStorageY, int pX, int pY, NativeImage pImage) {
+        // Only fill in transparent colors if mipmaps are on and the texture name does not contain "leaves".
+        // We're injecting after the "name" field has been set, so this is safe even though we're in a constructor.
+        embeddium$processTransparentImages(pImage, getMipmapLevels() > 0 && !name.getPath().contains("leaves"));
+
+        this.name = name;
+    }
+    *///?} else {
+    /*@Redirect(method = "<init>", at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;info:Lnet/minecraft/client/renderer/texture/TextureAtlasSprite$Info;", opcode = Opcodes.PUTFIELD))
+    private void sodium$beforeGenerateMipLevels(TextureAtlasSprite instance, TextureAtlasSprite.Info info, TextureAtlas pAtlas, TextureAtlasSprite.Info pSpriteInfo, int pMipLevel, int pStorageX, int pStorageY, int pX, int pY, NativeImage pImage) {
+        // Only fill in transparent colors if mipmaps are on and the texture name does not contain "leaves".
+        // We're injecting after the "name" field has been set, so this is safe even though we're in a constructor.
+        embeddium$processTransparentImages(pImage, getMipmapLevels() > 0 && !info.name().getPath().contains("leaves"));
+
+        this.info = info;
+    }
+    *///?}
 
     /**
      * Fixes a common issue in image editing programs where fully transparent pixels are saved with fully black colors.
@@ -80,7 +124,7 @@ public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
             long pPixel = ppPixel + (pixelIndex * 4);
 
             int color = MemoryUtil.memGetInt(pPixel);
-            int alpha = ARGB.alpha(color);
+            int alpha = ColorARGB.unpackAlpha(color);
 
             // Ignore all fully-transparent pixels for the purposes of computing an average color.
             if (alpha > 0) {
@@ -94,9 +138,9 @@ public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
                     float weight = (float) alpha;
 
                     // Make sure to convert to linear space so that we don't lose brightness.
-                    r += ColorSRGB.srgbToLinear(ARGB.red(color)) * weight;
-                    g += ColorSRGB.srgbToLinear(ARGB.green(color)) * weight;
-                    b += ColorSRGB.srgbToLinear(ARGB.blue(color)) * weight;
+                    r += ColorSRGB.srgbToLinear(ColorARGB.unpackRed(color)) * weight;
+                    g += ColorSRGB.srgbToLinear(ColorARGB.unpackGreen(color)) * weight;
+                    b += ColorSRGB.srgbToLinear(ColorARGB.unpackBlue(color)) * weight;
 
                     totalWeight += weight;
                 }
@@ -108,7 +152,9 @@ public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
         this.embeddium$transparencyLevel = level;
 
         // Bail if none of the pixels are semi-transparent or we aren't supposed to rewrite colors.
-        if (!shouldRewriteColors || totalWeight == 0.0f) {
+        // We can also bail if the transparency level is OPAQUE, since it indicates none of the pixels
+        // will need to be overwritten.
+        if (!shouldRewriteColors || this.embeddium$transparencyLevel == SpriteTransparencyLevel.OPAQUE || totalWeight == 0.0f) {
             return;
         }
 
@@ -124,7 +170,7 @@ public class SpriteContentsMixin implements SpriteTransparencyLevelHolder {
             long pPixel = ppPixel + (pixelIndex * 4);
 
             int color = MemoryUtil.memGetInt(pPixel);
-            int alpha = ARGB.alpha(color);
+            int alpha = ColorARGB.unpackAlpha(color);
 
             // Replace the color values of pixels which are fully transparent, since they have no color data.
             if (alpha == 0) {

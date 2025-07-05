@@ -8,7 +8,7 @@ import org.embeddedt.embeddium.impl.compatibility.workarounds.Workarounds;
 
 public class EmbeddiumPreLaunch {
     public static void onPreLaunch() {
-        if(FMLLoader.getDist() == Dist.CLIENT) {
+        if(FMLLoader.getCurrent().getDist() == Dist.CLIENT) {
             GraphicsAdapterProbe.findAdapters();
             EarlyDriverScanner.scanDrivers();
             Workarounds.init();

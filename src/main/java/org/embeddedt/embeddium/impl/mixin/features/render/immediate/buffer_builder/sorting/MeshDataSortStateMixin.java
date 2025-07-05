@@ -1,6 +1,8 @@
 package org.embeddedt.embeddium.impl.mixin.features.render.immediate.buffer_builder.sorting;
 
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+//? if >=1.21 {
+
+/*import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexSorting;
@@ -18,10 +20,10 @@ public class MeshDataSortStateMixin {
     @Final
     private VertexFormat.IndexType indexType;
 
-    /**
+    /^*
      * @author JellySquid
      * @reason Use direct memory access, avoid indirection
-     */
+     ^/
     @Overwrite
     public ByteBufferBuilder.Result buildSortedIndexBuffer(ByteBufferBuilder buffer, VertexSorting sorting) {
         int[] indices = sorting.sort(this.centroids);
@@ -60,3 +62,5 @@ public class MeshDataSortStateMixin {
         }
     }
 }
+
+*///?}

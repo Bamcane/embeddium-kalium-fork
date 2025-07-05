@@ -44,13 +44,3 @@ jobs:
         with:
           name: Embeddium
           path: build/libs
-      - name: Run automated tests
-        uses: coactions/setup-xvfb@v1
-        with:
-          run: ./gradlew runGameTestCiClient
-      - name: Upload test artifacts
-        uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: Embeddium-TestData
-          path: runs/gameTestCiClient

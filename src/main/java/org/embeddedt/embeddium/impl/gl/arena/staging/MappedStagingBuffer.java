@@ -5,6 +5,8 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayFIFOQueue;
 import org.embeddedt.embeddium.impl.gl.buffer.*;
 import org.embeddedt.embeddium.impl.gl.device.CommandList;
 import org.embeddedt.embeddium.impl.gl.device.RenderDevice;
+import org.embeddedt.embeddium.impl.gl.functions.BufferCopyFunctions;
+import org.embeddedt.embeddium.impl.gl.functions.BufferMapRangeFunctions;
 import org.embeddedt.embeddium.impl.gl.functions.BufferStorageFunctions;
 import org.embeddedt.embeddium.impl.gl.sync.GlFence;
 import org.embeddedt.embeddium.impl.gl.util.EnumBitField;
@@ -24,7 +26,7 @@ public class MappedStagingBuffer implements StagingBuffer {
     private final FallbackStagingBuffer fallbackStagingBuffer;
 
     private final MappedBuffer mappedBuffer;
-    private final PriorityQueue<CopyCommand> pendingCopies = new ObjectArrayFIFOQueue<>();
+    private final List<CopyCommand> pendingCopies = new ArrayList<>();
     private final PriorityQueue<FencedMemoryRegion> fencedRegions = new ObjectArrayFIFOQueue<>();
 
     private int start = 0;
@@ -48,7 +50,10 @@ public class MappedStagingBuffer implements StagingBuffer {
     }
 
     public static boolean isSupported(RenderDevice instance) {
-        return instance.getDeviceFunctions().getBufferStorageFunctions() != BufferStorageFunctions.NONE;
+        var functions = instance.getDeviceFunctions();
+        return functions.bufferStorageFunctions() != BufferStorageFunctions.NONE
+                && functions.bufferCopyFunctions() != BufferCopyFunctions.PIXEL_PACK
+                && functions.bufferMapRangeFunctions() == BufferMapRangeFunctions.CORE;
     }
 
     @Override
@@ -81,7 +86,7 @@ public class MappedStagingBuffer implements StagingBuffer {
 
     private void addTransfer(ByteBuffer data, GlBuffer dst, long readOffset, long writeOffset) {
         this.mappedBuffer.map.write(data, (int) readOffset);
-        this.pendingCopies.enqueue(new CopyCommand(dst, readOffset, writeOffset, data.remaining()));
+        this.pendingCopies.add(new CopyCommand(dst, readOffset, writeOffset, data.remaining()));
     }
 
     @Override
@@ -110,12 +115,14 @@ public class MappedStagingBuffer implements StagingBuffer {
         this.start = this.pos;
     }
 
-    private static List<CopyCommand> consolidateCopies(PriorityQueue<CopyCommand> queue) {
+    private static List<CopyCommand> consolidateCopies(List<CopyCommand> queue) {
         List<CopyCommand> merged = new ArrayList<>();
         CopyCommand last = null;
 
-        while (!queue.isEmpty()) {
-            CopyCommand command = queue.dequeue();
+        int numCommands = queue.size();
+        //noinspection ForLoopReplaceableByForEach
+        for (int i = 0; i < numCommands; i++) {
+            CopyCommand command = queue.get(i);
 
             if (last != null) {
                 if (last.buffer == command.buffer &&
@@ -128,6 +135,8 @@ public class MappedStagingBuffer implements StagingBuffer {
 
             merged.add(last = new CopyCommand(command));
         }
+
+        queue.clear();
 
         return merged;
     }

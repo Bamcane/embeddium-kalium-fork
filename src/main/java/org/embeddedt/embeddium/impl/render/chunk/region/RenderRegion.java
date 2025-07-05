@@ -1,23 +1,23 @@
 package org.embeddedt.embeddium.impl.render.chunk.region;
 
 import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
-import org.embeddedt.embeddium.impl.Embeddium;
+import lombok.Getter;
 import org.embeddedt.embeddium.impl.gl.arena.GlBufferArena;
 import org.embeddedt.embeddium.impl.gl.arena.staging.StagingBuffer;
+import org.embeddedt.embeddium.impl.gl.attribute.GlVertexFormat;
 import org.embeddedt.embeddium.impl.gl.buffer.GlBuffer;
 import org.embeddedt.embeddium.impl.gl.device.CommandList;
 import org.embeddedt.embeddium.impl.gl.tessellation.GlTessellation;
+import org.embeddedt.embeddium.impl.render.chunk.RenderPassConfiguration;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSection;
 import org.embeddedt.embeddium.impl.render.chunk.data.SectionRenderDataStorage;
-import org.embeddedt.embeddium.impl.render.chunk.lists.ChunkRenderList;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
-import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkMeshFormats;
 import org.embeddedt.embeddium.impl.util.MathUtil;
-import net.minecraft.core.SectionPos;
-import org.apache.commons.lang3.Validate;
+import org.embeddedt.embeddium.impl.util.PositionUtil;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import java.util.Arrays;
-import java.util.Map;
+import java.util.*;
 
 public class RenderRegion {
     public static final int REGION_WIDTH = 8;
@@ -35,33 +35,47 @@ public class RenderRegion {
     public static final int REGION_SIZE = REGION_WIDTH * REGION_HEIGHT * REGION_LENGTH;
 
     static {
-        Validate.isTrue(MathUtil.isPowerOfTwo(REGION_WIDTH));
-        Validate.isTrue(MathUtil.isPowerOfTwo(REGION_HEIGHT));
-        Validate.isTrue(MathUtil.isPowerOfTwo(REGION_LENGTH));
+        if(!MathUtil.isPowerOfTwo(REGION_WIDTH) || !MathUtil.isPowerOfTwo(REGION_HEIGHT) || !MathUtil.isPowerOfTwo(REGION_LENGTH)) {
+            throw new IllegalStateException("Region width/height/length are not powers of two");
+        }
     }
 
     private final StagingBuffer stagingBuffer;
     private final int x, y, z;
 
-    private final ChunkRenderList renderList;
+    @Getter
+    private final int id;
 
     private final RenderSection[] sections = new RenderSection[RenderRegion.REGION_SIZE];
+    @Getter
+    private final long[] sectionLoadTimes = new long[RenderRegion.REGION_SIZE];
+    @Getter
+    private long newestSectionLoadTime;
+
     private int sectionCount;
 
     private final Map<TerrainRenderPass, SectionRenderDataStorage> sectionRenderData = new Reference2ReferenceOpenHashMap<>();
-    private DeviceResources resources;
 
-    public RenderRegion(int x, int y, int z, StagingBuffer stagingBuffer) {
+    @Unmodifiable
+    private List<DeviceResources> allDeviceResources = List.of();
+
+    /**
+     * Incremented each time the set of render passes in the region is changed.
+     */
+    @Getter
+    private int passSetUpdateCount = 0;
+
+    RenderRegion(int x, int y, int z, int id, StagingBuffer stagingBuffer) {
         this.x = x;
         this.y = y;
         this.z = z;
 
+        this.id = id;
         this.stagingBuffer = stagingBuffer;
-        this.renderList = new ChunkRenderList(this);
     }
 
     public static long key(int x, int y, int z) {
-        return SectionPos.asLong(x, y, z);
+        return PositionUtil.packSection(x, y, z);
     }
 
     public int getChunkX() {
@@ -107,12 +121,11 @@ public class RenderRegion {
 
         this.sectionRenderData.clear();
 
-        if (this.resources != null) {
-            this.resources.delete(commandList);
-            this.resources = null;
-        }
+        this.allDeviceResources.forEach(resources -> resources.delete(commandList));
+        this.allDeviceResources = List.of();
 
         Arrays.fill(this.sections, null);
+        Arrays.fill(this.sectionLoadTimes, 0);
     }
 
     public boolean isEmpty() {
@@ -123,20 +136,55 @@ public class RenderRegion {
         return this.sectionRenderData.get(pass);
     }
 
-    public SectionRenderDataStorage createStorage(TerrainRenderPass pass) {
+    public SectionRenderDataStorage createStorage(TerrainRenderPass pass, RenderPassConfiguration<?> renderPassConfiguration) {
         var storage = this.sectionRenderData.get(pass);
 
         if (storage == null) {
-            this.sectionRenderData.put(pass, storage = new SectionRenderDataStorage());
+            this.sectionRenderData.put(pass, storage = new SectionRenderDataStorage(renderPassConfiguration.getPrimitiveTypeForPass(pass)));
+            this.passSetUpdateCount++;
         }
 
         return storage;
     }
 
-    public void refresh(CommandList commandList) {
-        if (this.resources != null) {
-            this.resources.deleteTessellations(commandList);
+    public void removeEmptyStorages() {
+        if (this.sectionRenderData.isEmpty()) {
+            return;
         }
+
+        boolean anyRemoved = this.sectionRenderData.values().removeIf(s -> {
+            if (s.isEmpty()) {
+                s.delete();
+                return true;
+            } else {
+                return false;
+            }
+        });
+
+        if (anyRemoved) {
+            this.passSetUpdateCount++;
+        }
+    }
+
+    public void removeMeshes(int sectionIndex) {
+        if (this.sectionRenderData.isEmpty()) {
+            return;
+        }
+        for (var storage : this.sectionRenderData.values()) {
+            storage.removeMeshes(sectionIndex);
+        }
+    }
+
+    public boolean hasSectionsInPass(TerrainRenderPass pass) {
+        return this.sectionRenderData.containsKey(pass);
+    }
+
+    public Set<TerrainRenderPass> getPasses() {
+        return this.sectionRenderData.keySet();
+    }
+
+    public void refresh(CommandList commandList) {
+        this.allDeviceResources.forEach(resources -> resources.deleteTessellations(commandList));
 
         for (var storage : this.sectionRenderData.values()) {
             storage.onBufferResized();
@@ -152,6 +200,7 @@ public class RenderRegion {
         }
 
         this.sections[sectionIndex] = section;
+        this.sectionLoadTimes[sectionIndex] = 0;
         this.sectionCount++;
     }
 
@@ -170,52 +219,84 @@ public class RenderRegion {
         }
 
         this.sections[sectionIndex] = null;
+        this.sectionLoadTimes[sectionIndex] = 0;
         this.sectionCount--;
     }
 
+    public void updateSectionLoadTime(RenderSection section) {
+        long timestamp = System.nanoTime();
+        this.sectionLoadTimes[section.getSectionIndex()] = timestamp;
+        this.newestSectionLoadTime = timestamp;
+    }
+
+    @Nullable
     public RenderSection getSection(int id) {
         return this.sections[id];
     }
 
-    public DeviceResources getResources() {
-        return this.resources;
+    public Collection<DeviceResources> getAllResources() {
+        return this.allDeviceResources;
     }
 
-    public DeviceResources createResources(CommandList commandList) {
-        if (this.resources == null) {
-            this.resources = new DeviceResources(commandList, this.stagingBuffer);
+    public DeviceResources getResources(GlVertexFormat format) {
+        var stride = format.getStride();
+        var list = this.allDeviceResources;
+        //noinspection ForLoopReplaceableByForEach
+        for (int i = 0; i < list.size(); i++) {
+            var resources = list.get(i);
+            if (resources.stride == stride) {
+                return resources;
+            }
+        }
+        return null;
+    }
+
+    public DeviceResources createResources(GlVertexFormat format, CommandList commandList) {
+        var resources = getResources(format);
+        if (resources == null) {
+            resources = new DeviceResources(commandList, this.stagingBuffer, format.getStride());
+
+            var newList = new ArrayList<>(this.allDeviceResources);
+            newList.add(resources);
+            this.allDeviceResources = List.copyOf(newList);
         }
 
-        return this.resources;
+        return resources;
     }
 
     public void update(CommandList commandList) {
-        if (this.resources != null && this.resources.shouldDelete()) {
-            this.resources.delete(commandList);
-            this.resources = null;
+        var oldList = this.allDeviceResources;
+        boolean needListUpdate = false;
+        //noinspection ForLoopReplaceableByForEach
+        for (int i = 0; i < oldList.size(); i++) {
+            var resources = oldList.get(i);
+            if (resources.shouldDelete()) {
+                resources.delete(commandList);
+                needListUpdate = true;
+            } else {
+                resources.deleteIndexArenaIfPossible(commandList);
+            }
         }
-    }
-
-    public ChunkRenderList getRenderList() {
-        return this.renderList;
+        // Skip the list copy in the common case that nothing was deleted.
+        if (needListUpdate) {
+            var newList = new ArrayList<>(this.allDeviceResources);
+            newList.removeIf(DeviceResources::isDeleted);
+            this.allDeviceResources = List.copyOf(newList);
+        }
     }
 
     public static class DeviceResources {
         private final GlBufferArena geometryArena;
-        private final GlBufferArena indexArena;
+        private final StagingBuffer stagingBuffer;
+        private final int stride;
+        private GlBufferArena indexArena;
         private GlTessellation tessellation;
         private GlTessellation indexedTessellation;
 
-        public DeviceResources(CommandList commandList, StagingBuffer stagingBuffer) {
-            int stride;
-            if(!Embeddium.canUseVanillaVertices()) {
-                // this line must be left unchanged for the Oculus mixin to apply
-                stride = ChunkMeshFormats.COMPACT.getVertexFormat().getStride();
-            } else {
-                stride = ChunkMeshFormats.VANILLA_LIKE.getVertexFormat().getStride();
-            }
+        public DeviceResources(CommandList commandList, StagingBuffer stagingBuffer, int stride) {
             this.geometryArena = new GlBufferArena(commandList, REGION_SIZE * 756, stride, stagingBuffer);
-            this.indexArena = new GlBufferArena(commandList, (REGION_SIZE * 378) / 4 * 6, 4, stagingBuffer);
+            this.stagingBuffer = stagingBuffer;
+            this.stride = stride;
         }
 
         public void updateTessellation(CommandList commandList, GlTessellation tessellation) {
@@ -259,26 +340,50 @@ public class RenderRegion {
         }
 
         public GlBuffer getIndexBuffer() {
+            if (this.indexArena == null) {
+                throw new IllegalStateException("Attempted to retrieve index buffer for a non-indexed region");
+            }
             return this.indexArena.getBufferObject();
         }
 
         public void delete(CommandList commandList) {
             this.deleteTessellations(commandList);
             this.geometryArena.delete(commandList);
-            this.indexArena.delete(commandList);
+            if (this.indexArena != null) {
+                this.indexArena.delete(commandList);
+            }
+        }
+
+        public boolean isDeleted() {
+            return this.geometryArena.isDeleted();
         }
 
         public GlBufferArena getGeometryArena() {
             return this.geometryArena;
         }
 
+
         public GlBufferArena getIndexArena() {
             return this.indexArena;
         }
 
+        public GlBufferArena getOrCreateIndexArena(CommandList commandList) {
+            if (this.indexArena == null) {
+                this.indexArena = new GlBufferArena(commandList, (REGION_SIZE * 126) / 4 * 6, 4, this.stagingBuffer);
+            }
+            return this.indexArena;
+        }
 
         public boolean shouldDelete() {
             return this.geometryArena.isEmpty();
+        }
+
+        public void deleteIndexArenaIfPossible(CommandList commandList) {
+            if (this.indexArena != null && this.indexArena.isEmpty()) {
+                this.updateIndexedTessellation(commandList, null);
+                this.indexArena.delete(commandList);
+                this.indexArena = null;
+            }
         }
     }
 }

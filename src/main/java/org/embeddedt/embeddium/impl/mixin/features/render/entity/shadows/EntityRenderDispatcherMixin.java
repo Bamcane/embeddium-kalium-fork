@@ -1,8 +1,5 @@
 package org.embeddedt.embeddium.impl.mixin.features.render.entity.shadows;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import org.embeddedt.embeddium.impl.render.vertex.VertexConsumerUtils;
 import org.embeddedt.embeddium.api.vertex.buffer.VertexBufferWriter;
 import org.embeddedt.embeddium.api.vertex.format.common.ModelVertex;
 import net.minecraft.client.renderer.LightTexture;
@@ -17,7 +14,10 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.embeddedt.embeddium.api.util.ColorABGR;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.embeddedt.embeddium.api.math.MatrixHelper;
+import org.embeddedt.embeddium.impl.model.light.data.LightDataAccess;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
 import org.spongepowered.asm.mixin.Mixin;
@@ -36,12 +36,11 @@ public class EntityRenderDispatcherMixin {
      * @reason Reduce vertex assembly overhead for shadow rendering
      */
     @Inject(method = "renderBlockShadow", at = @At("HEAD"), cancellable = true)
-    private static void renderShadowPartFast(PoseStack.Pose entry, VertexConsumer vertices, ChunkAccess chunk, LevelReader world, BlockPos pos, double x, double y, double z, float radius, float opacity, CallbackInfo ci) {
-        var writer = VertexConsumerUtils.convertOrLog(vertices);
+    private static void renderShadowPartFast(PoseStack.Pose entry, VertexConsumer vertices, /*? if >=1.20 {*/ ChunkAccess chunk, /*?}*/ LevelReader world, BlockPos pos, double x, double y, double z, float radius, float opacity, CallbackInfo ci) {
+        var writer = VertexBufferWriter.tryOf(vertices);
 
-        if (writer == null) {
+        if (writer == null)
             return;
-        }
 
         ci.cancel();
 
@@ -64,7 +63,12 @@ public class EntityRenderDispatcherMixin {
             return;
         }
 
+        //? if >=1.19 {
         float brightness = LightTexture.getBrightness(world.dimensionType(), light);
+        //?} else if >=1.16 {
+        /*float brightness = world.dimensionType().brightness(light);
+        *///?} else
+        /*float brightness = world.getDimension().getBrightness(light);*/
         float alpha = (float) (((double) opacity - ((y - (double) pos.getY()) / 2.0)) * 0.5 * (double) brightness);
 
         if (alpha >= 0.0F) {
@@ -77,13 +81,22 @@ public class EntityRenderDispatcherMixin {
             float minX = (float) ((pos.getX() + box.minX) - x);
             float maxX = (float) ((pos.getX() + box.maxX) - x);
 
-            float minY = (float) ((pos.getY() + box.minY) - y);
+            // Need to apply an epsilon pre-1.16 to prevent z-fighting
+            float minY = (float) ((pos.getY() + box.minY) - y /*? if <1.16 {*/ /*+ 0.015625 *//*?}*/);
 
             float minZ = (float) ((pos.getZ() + box.minZ) - z);
             float maxZ = (float) ((pos.getZ() + box.maxZ) - z);
 
             renderShadowPart(entry, writer, radius, alpha, minX, maxX, minY, minZ, maxZ);
         }
+    }
+
+    /**
+     * @deprecated don't call, but just in case...
+     */
+    @Deprecated
+    private static void renderShadowPart(PoseStack.Pose matrices, VertexConsumer consumer, float radius, float alpha, float minX, float maxX, float minY, float minZ, float maxZ) {
+        renderShadowPart(matrices, VertexBufferWriter.of(consumer), radius, alpha, minX, maxX, minY, minZ, maxZ);
     }
 
     @Unique
@@ -118,7 +131,8 @@ public class EntityRenderDispatcherMixin {
             writeShadowVertex(ptr, matPosition, maxX, minY, minZ, u2, v1, color, normal);
             ptr += ModelVertex.STRIDE;
 
-            writer.push(stack, buffer, 4, ModelVertex.FORMAT);
+            writer
+                    .push(stack, buffer, 4, ModelVertex.FORMAT);
         }
     }
 
@@ -129,6 +143,6 @@ public class EntityRenderDispatcherMixin {
         float yt = MatrixHelper.transformPositionY(matPosition, x, y, z);
         float zt = MatrixHelper.transformPositionZ(matPosition, x, y, z);
 
-        ModelVertex.write(ptr, xt, yt, zt, color, u, v, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, normal);
+        ModelVertex.write(ptr, xt, yt, zt, color, u, v, LightDataAccess.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, normal);
     }
 }

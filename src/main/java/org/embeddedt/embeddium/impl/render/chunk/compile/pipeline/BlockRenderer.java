@@ -1,8 +1,10 @@
 package org.embeddedt.embeddium.impl.render.chunk.compile.pipeline;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import org.embeddedt.embeddium.api.render.chunk.BlockRenderContext;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.block.Block;
+import org.embeddedt.embeddium.api.render.texture.SpriteUtil;
 import org.embeddedt.embeddium.impl.Embeddium;
 import org.embeddedt.embeddium.impl.model.color.ColorProvider;
 import org.embeddedt.embeddium.impl.model.color.ColorProviderRegistry;
@@ -12,34 +14,39 @@ import org.embeddedt.embeddium.impl.model.light.LightPipelineProvider;
 import org.embeddedt.embeddium.impl.model.light.data.QuadLightData;
 import org.embeddedt.embeddium.impl.model.quad.BakedQuadView;
 import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
-import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFlags;
 import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadOrientation;
-import org.embeddedt.embeddium.impl.render.ShaderModBridge;
+import org.embeddedt.embeddium.impl.render.chunk.ContextAwareChunkVertexEncoder;
+import org.embeddedt.embeddium.impl.render.chunk.MojangVertexConsumer;
+import org.embeddedt.embeddium.impl.util.ModernQuadFacing;
 import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildBuffers;
 import org.embeddedt.embeddium.impl.render.chunk.compile.buffers.ChunkModelBuilder;
-import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevel;
-import org.embeddedt.embeddium.impl.render.chunk.sprite.SpriteTransparencyLevelHolder;
-import org.embeddedt.embeddium.impl.render.chunk.terrain.material.DefaultMaterials;
+import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BakedQuadGroupAnalyzer;
+import org.embeddedt.embeddium.impl.render.chunk.data.MinecraftBuiltRenderSectionData;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.material.Material;
 import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexEncoder;
 import org.embeddedt.embeddium.impl.util.DirectionUtil;
 import org.embeddedt.embeddium.impl.util.ModelQuadUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.block.model.BlockModelPart;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
 import net.minecraft.world.phys.Vec3;
 import org.embeddedt.embeddium.api.BlockRendererRegistry;
+import org.embeddedt.embeddium.api.render.chunk.EmbeddiumBlockAndTintGetter;
+import org.embeddedt.embeddium.api.model.EmbeddiumBakedModelExtension;
 import org.embeddedt.embeddium.impl.render.chunk.ChunkColorWriter;
 import org.embeddedt.embeddium.impl.render.frapi.FRAPIModelUtils;
 import org.embeddedt.embeddium.impl.render.frapi.FRAPIRenderHandler;
-import org.embeddedt.embeddium.impl.render.frapi.IndigoBlockRenderContext;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+
+import static org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BakedQuadGroupAnalyzer.*;
 
 /**
  * The Embeddium equivalent to vanilla's ModelBlockRenderer. This is the primary component of the chunk meshing logic;
@@ -48,9 +55,6 @@ import java.util.List;
  * This class does not need to be thread-safe, as a separate instance is allocated per meshing thread.
  */
 public class BlockRenderer {
-    private static final PoseStack EMPTY_STACK = new PoseStack();
-    private final RandomSource random = new SingleThreadedRandomSource(42L);
-
     private final ColorProviderRegistry colorProviderRegistry;
     private final BlockOcclusionCache occlusionCache;
 
@@ -72,48 +76,30 @@ public class BlockRenderer {
 
     private final FRAPIRenderHandler fabricModelRenderingHandler;
 
-    private final ChunkColorWriter colorEncoder = ChunkColorWriter.get();
+    private final ChunkColorWriter colorEncoder;
 
-    /**
-     * If {@code true}, the {@link #QUAD_RENDER_PASS_OPTIMIZATION} flag will be enabled.
-     */
-    private final boolean enableRenderPassOptimization;
+    private final EmbeddiumBlockAndTintGetter world;
 
-    /**
-     * No changes should be applied when rendering quads.
-     */
-    private static final int QUAD_FLAGS_NONE = 0x0;
-    /**
-     * If specified, the MC-138211 quad reorienting fix should be applied during emission of quad geometry.
-     * This fix must be disabled with certain modded models that use superimposed quads, as it can alter the triangulation
-     * of some layers but not others, resulting in Z-fighting.
-     */
-    private static final int QUAD_REORIENTING = 0x1;
-    /**
-     * If specified, quads will be placed in differing render passes than what is specified. This can help avoid
-     * GPU bottlenecks by running the fragment shader on pixels which aren't visible anyway.
-     * @see <a href="https://www.khronos.org/opengl/wiki/Early_Fragment_Test">Early Fragment Test</a>
-     */
-    private static final int QUAD_RENDER_PASS_OPTIMIZATION = 0x2;
-    /**
-     * If specified, all changes should be applied when rendering quads.
-     */
-    private static final int QUAD_FLAGS_ALL = QUAD_REORIENTING | QUAD_RENDER_PASS_OPTIMIZATION;
+    private final boolean isRenderPassOptEnabled;
+    private final MojangVertexConsumer vertexConsumer = new MojangVertexConsumer();
+    private final BakedQuadGroupAnalyzer analyzer = new BakedQuadGroupAnalyzer();
 
-    /**
-     * Quad flags used to control how quads are emitted/rendered.
-     * These take the values of the {@code QUAD_} constants specified in this class.
-     */
-    private int quadRenderingFlags = QUAD_FLAGS_NONE;
+    private final Map<Block, RenderType> renderTypeOverrides;
 
-    public BlockRenderer(ColorProviderRegistry colorRegistry, LightPipelineProvider lighters) {
+    public BlockRenderer(ColorProviderRegistry colorRegistry, LightPipelineProvider lighters,
+                         @Nullable Map<Block, RenderType> renderTypeOverrides, EmbeddiumBlockAndTintGetter world
+    ) {
         this.colorProviderRegistry = colorRegistry;
         this.lighters = lighters;
+        this.renderTypeOverrides = renderTypeOverrides;
 
         this.occlusionCache = new BlockOcclusionCache();
         this.useAmbientOcclusion = Minecraft.useAmbientOcclusion();
-        this.fabricModelRenderingHandler = FRAPIRenderHandler.INDIGO_PRESENT ? new IndigoBlockRenderContext(this.occlusionCache, lighters.getLightData()) : null;
-        this.enableRenderPassOptimization = Embeddium.options().performance.useRenderPassOptimization && !ShaderModBridge.areShadersEnabled();
+        this.fabricModelRenderingHandler = null;
+        this.isRenderPassOptEnabled = Embeddium.options().performance.useRenderPassOptimization;
+
+        this.colorEncoder = ChunkColorWriter.EMBEDDIUM;
+        this.world = world;
     }
 
     /**
@@ -122,7 +108,16 @@ public class BlockRenderer {
      * @param buffers the buffer to output geometry to
      */
     public void renderModel(BlockRenderContext ctx, ChunkBuildBuffers buffers) {
-        var material = DefaultMaterials.forRenderLayer(ctx.renderLayer());
+        int defaultQuadRenderingFlags = USE_ALL_THINGS;
+        var blockRenderType = ctx.renderLayer();
+
+        if (!isRenderPassOptEnabled) {
+            defaultQuadRenderingFlags &= ~USE_RENDER_PASS_OPTIMIZATION;
+        }
+
+        this.analyzer.setDefaultRenderingFlags(defaultQuadRenderingFlags);
+
+        var material = buffers.getRenderPassConfiguration().getMaterialForRenderType(blockRenderType);
         var meshBuilder = buffers.get(material);
 
         ColorProvider<BlockState> colorizer = this.colorProviderRegistry.getColorProvider(ctx.state().getBlock());
@@ -130,7 +125,7 @@ public class BlockRenderer {
         LightMode mode = this.getLightingMode(ctx);
         LightPipeline lighter = this.lighters.getLighter(mode);
         Vec3 renderOffset;
-        
+
         if (ctx.state().hasOffsetFunction()) {
             renderOffset = ctx.state().getOffset(ctx.pos());
         } else {
@@ -143,9 +138,9 @@ public class BlockRenderer {
 
         if(!customRenderers.isEmpty()) {
             for (BlockRendererRegistry.Renderer customRenderer : customRenderers) {
-                try(var consumer = meshBuilder.asVertexConsumer(material)) {
+                try(var consumer = vertexConsumer.initialize(buffers.get(material), material, ctx)) {
                     consumer.embeddium$setOffset(ctx.origin());
-                    BlockRendererRegistry.RenderResult result = customRenderer.renderBlock(ctx, random, consumer);
+                    BlockRendererRegistry.RenderResult result = customRenderer.renderBlock(ctx, ctx.random(), consumer);
                     if (result == BlockRendererRegistry.RenderResult.OVERRIDE) {
                         return;
                     }
@@ -154,151 +149,86 @@ public class BlockRenderer {
         }
 
         // Delegate FRAPI models to their pipeline
-        if (FRAPIModelUtils.isFRAPIModel(ctx.model())) {
+        if (this.fabricModelRenderingHandler != null && FRAPIModelUtils.isFRAPIModel(ctx.model())) {
             this.fabricModelRenderingHandler.reset();
-            this.fabricModelRenderingHandler.renderEmbeddium(ctx, buffers, ctx.stack(), random);
+            this.fabricModelRenderingHandler.renderEmbeddium(ctx, buffers, ctx.stack(), ctx.random());
             return;
         }
 
-        var nullCullfaceFlags = QUAD_FLAGS_ALL;
+        var encoder = buffers.get(material).getEncoder();
 
         for (Direction face : DirectionUtil.ALL_DIRECTIONS) {
-            List<BakedQuad> quads = this.getGeometry(ctx, face);
+            List<BlockModelPart> quads = this.getGeometry(ctx, face);
 
             if (!quads.isEmpty() && this.isFaceVisible(ctx, face)) {
-                this.quadRenderingFlags = QUAD_FLAGS_ALL;
-                this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, buffers, meshBuilder, quads, face);
-                nullCullfaceFlags &= this.quadRenderingFlags;
+                if (encoder instanceof ContextAwareChunkVertexEncoder contextAwareEncoder) {
+                    contextAwareEncoder.prepareToRenderBlockFace(ctx, face);
+                }
+
+                int flags = this.analyzer.getFlagsForRendering(ModernQuadFacing.fromDirection(face), BakedQuadView.ofList(quads));
+                this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, buffers, meshBuilder, quads, face, flags);
             }
         }
 
-        List<BakedQuad> all = this.getGeometry(ctx, null);
+        List<BlockModelPart> all = this.getGeometry(ctx, null);
 
         if (!all.isEmpty()) {
-            this.quadRenderingFlags = nullCullfaceFlags;
-            this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, buffers, meshBuilder, all, null);
+            if (encoder instanceof ContextAwareChunkVertexEncoder contextAwareEncoder) {
+                contextAwareEncoder.prepareToRenderBlockFace(ctx, null);
+            }
+
+            int flags = this.analyzer.getFlagsForRendering(ModelQuadFacing.UNASSIGNED, BakedQuadView.ofList(all));
+            this.renderQuadList(ctx, material, lighter, colorizer, renderOffset, buffers, meshBuilder, all, null, flags);
+        }
+
+        if (encoder instanceof ContextAwareChunkVertexEncoder contextAwareEncoder) {
+            contextAwareEncoder.finishRenderingBlock();
         }
     }
 
-    private List<BakedQuad> getGeometry(BlockRenderContext ctx, Direction face) {
-        var random = this.random;
+    private List<BlockModelPart> getGeometry(BlockRenderContext ctx, Direction face) {
+        var random = ctx.random();
         random.setSeed(ctx.seed());
 
-        return ctx.model().getQuads(ctx.state(), face, random, ctx.modelData(), ctx.renderLayer());
+        return ctx.model().collectParts(world, ctx.pos(), ctx.state(), random);
     }
 
     private boolean isFaceVisible(BlockRenderContext ctx, Direction face) {
         return this.occlusionCache.shouldDrawSide(ctx.state(), ctx.localSlice(), ctx.pos(), face);
     }
 
-    private static int computeLightFlagMask(BakedQuad quad) {
-        int flag = 0;
-
-        if (quad.hasAmbientOcclusion()) {
-            flag |= 1;
-        }
-
-        if (quad.isShade()) {
-            flag |= 2;
-        }
-
-        return flag;
-    }
-
-    private SpriteTransparencyLevel getQuadTransparencyLevel(BakedQuadView quad) {
-        if ((quad.getFlags() & ModelQuadFlags.IS_PASS_OPTIMIZABLE) == 0 || quad.getSprite() == null) {
-            return SpriteTransparencyLevel.TRANSLUCENT;
-        }
-
-        return SpriteTransparencyLevelHolder.getTransparencyLevel(quad.getSprite());
-    }
-
-    private void checkQuadsHaveSameLightingConfig(List<BakedQuad> quads) {
-        int quadsSize = quads.size();
-
-        // By definition, singleton or empty lists of quads have a common lighting config. Only check larger lists
-        if (quadsSize >= 2) {
-            int flagMask = -1;
-
-            var highestSeenLevel = SpriteTransparencyLevel.OPAQUE;
-
-            // noinspection ForLoopReplaceableByForEach
-            for (int i = 0; i < quadsSize; i++) {
-                var quad = quads.get(i);
-                int newFlag = computeLightFlagMask(quad);
-                if (flagMask == -1) {
-                    flagMask = newFlag;
-                } else if(newFlag != flagMask) {
-                    this.quadRenderingFlags &= ~QUAD_REORIENTING;
-                }
-
-                var seenLevel = getQuadTransparencyLevel((BakedQuadView)quad);
-
-                if (seenLevel.ordinal() < highestSeenLevel.ordinal()) {
-                    this.quadRenderingFlags &= ~QUAD_RENDER_PASS_OPTIMIZATION;
-                } else {
-                    highestSeenLevel = seenLevel;
-                }
-            }
-        }
-
-        if (!this.enableRenderPassOptimization) {
-            this.quadRenderingFlags &= ~QUAD_RENDER_PASS_OPTIMIZATION;
-        }
-    }
-
-    private ChunkModelBuilder chooseOptimalBuilder(Material defaultMaterial, ChunkBuildBuffers buffers, ChunkModelBuilder defaultBuilder, BakedQuadView quad) {
-        if (defaultMaterial == DefaultMaterials.SOLID ||
-            ((this.quadRenderingFlags & QUAD_RENDER_PASS_OPTIMIZATION) == 0) ||
-            (quad.getFlags() & ModelQuadFlags.IS_PASS_OPTIMIZABLE) == 0 ||
-            quad.getSprite() == null) {
-
-            // No improvement possible
-            return defaultBuilder;
-        }
-
-        SpriteTransparencyLevel level = SpriteTransparencyLevelHolder.getTransparencyLevel(quad.getSprite().contents());
-
-        if (level == SpriteTransparencyLevel.OPAQUE && defaultMaterial.pass.supportsFragmentDiscard()) {
-            // Can use solid with no visual difference
-            return buffers.get(DefaultMaterials.SOLID);
-        } else if (level == SpriteTransparencyLevel.TRANSPARENT && defaultMaterial == DefaultMaterials.TRANSLUCENT) {
-            // Can use cutout_mipped with no visual difference
-            return buffers.get(DefaultMaterials.CUTOUT_MIPPED);
-        } else {
-            // Have to use default
-            return defaultBuilder;
-        }
-    }
-
     private void renderQuadList(BlockRenderContext ctx, Material material, LightPipeline lighter, ColorProvider<BlockState> colorizer, Vec3 offset,
-                                ChunkBuildBuffers buffers, ChunkModelBuilder defaultBuilder, List<BakedQuad> quads, Direction cullFace) {
+                                ChunkBuildBuffers buffers, ChunkModelBuilder defaultBuilder, List<BlockModelPart> quads, Direction cullFace, int flags) {
+        var renderPassConfig = buffers.getRenderPassConfiguration();
 
-        checkQuadsHaveSameLightingConfig(quads);
+        boolean reorient = (flags & USE_REORIENTING) != 0;
 
         // This is a very hot allocation, iterate over it manually
         // noinspection ForLoopReplaceableByForEach
         for (int i = 0, quadsSize = quads.size(); i < quadsSize; i++) {
-            BakedQuadView quad = (BakedQuadView) quads.get(i);
+            BakedQuadView quad = BakedQuadView.of(quads.get(i));
 
             final var lightData = this.getVertexLight(ctx, quad.hasAmbientOcclusion() ? lighter : this.lighters.getLighter(LightMode.FLAT), cullFace, quad);
             final var vertexColors = this.getVertexColors(ctx, colorizer, quad);
 
-            ChunkModelBuilder builder = this.chooseOptimalBuilder(material, buffers, defaultBuilder, quad);
+            var quadMaterial = BakedQuadGroupAnalyzer.chooseOptimalMaterial(flags, material, renderPassConfig, quad);
+            ChunkModelBuilder builder = (quadMaterial == material) ? defaultBuilder : buffers.get(quadMaterial);
 
-            this.writeGeometry(ctx, builder, offset, material, quad, vertexColors, lightData);
+            this.writeGeometry(ctx, builder, offset, quadMaterial, quad, vertexColors, lightData, reorient);
 
-            TextureAtlasSprite sprite = quad.getSprite();
+            TextureAtlasSprite sprite = (TextureAtlasSprite)quad.kalium$getSprite();
 
-            if (sprite != null) {
-                builder.addSprite(sprite);
+            if (SpriteUtil.hasAnimation(sprite) && builder.getSectionContextBundle() instanceof MinecraftBuiltRenderSectionData<?,?> mcData) {
+                //noinspection unchecked
+                ((Collection<TextureAtlasSprite>)mcData.animatedSprites).add(sprite);
             }
         }
     }
 
     private QuadLightData getVertexLight(BlockRenderContext ctx, LightPipeline lighter, Direction cullFace, BakedQuadView quad) {
         QuadLightData light = this.quadLightData;
-        lighter.calculate(quad, ctx.pos(), light, cullFace, quad.getLightFace(), quad.hasShade());
+        var pos = ctx.pos();
+        lighter.calculate(quad, pos.getX(), pos.getY(), pos.getZ(), light, ModernQuadFacing.fromDirectionOrUnassigned(cullFace), quad.getLightFace(), quad.hasShade(), false);
 
         return light;
     }
@@ -307,7 +237,7 @@ public class BlockRenderer {
         final int[] vertexColors = this.quadColors;
 
         if (colorProvider != null && quad.hasColor()) {
-            colorProvider.getColors(ctx.world(), ctx.pos(), ctx.state(), quad, vertexColors);
+            colorProvider.getColors(ctx.localSlice(), ctx.pos(), ctx.state(), quad, vertexColors);
             // Force full alpha on all colors
             for(int i = 0; i < vertexColors.length; i++) {
                 vertexColors[i] |= 0xFF000000;
@@ -325,12 +255,16 @@ public class BlockRenderer {
                                Material material,
                                BakedQuadView quad,
                                int[] colors,
-                               QuadLightData light)
+                               QuadLightData light,
+                               boolean reorient)
     {
-        ModelQuadOrientation orientation = ((this.quadRenderingFlags & QUAD_REORIENTING) != 0) ? ModelQuadOrientation.orientByBrightness(light.br, light.lm) : ModelQuadOrientation.NORMAL;
+        ModelQuadOrientation orientation = reorient ? ModelQuadOrientation.orientByBrightness(light.br, light.lm) : ModelQuadOrientation.NORMAL;
         var vertices = this.vertices;
 
         ModelQuadFacing normalFace = quad.getNormalFace();
+
+        int vanillaNormal = DirectionUtil.PACKED_NORMALS[quad.getLightFace().ordinal()];
+        int trueNormal = quad.getComputedFaceNormal();
 
         for (int dstIndex = 0; dstIndex < 4; dstIndex++) {
             int srcIndex = orientation.getVertexIndex(dstIndex);
@@ -345,7 +279,10 @@ public class BlockRenderer {
             out.u = quad.getTexU(srcIndex);
             out.v = quad.getTexV(srcIndex);
 
-            out.light = ModelQuadUtil.mergeBakedLight(quad.getLight(srcIndex), light.lm[srcIndex]);
+            out.light = ModelQuadUtil.mergeBakedLight(quad.getLight(srcIndex), quad.getVanillaLightEmission(), light.lm[srcIndex]);
+
+            out.vanillaNormal = vanillaNormal;
+            out.trueNormal = trueNormal;
         }
 
         var vertexBuffer = builder.getVertexBuffer(normalFace);
@@ -355,11 +292,7 @@ public class BlockRenderer {
     private LightMode getLightingMode(BlockRenderContext ctx) {
         var model = ctx.model();
         var state = ctx.state();
-        boolean canBeSmooth = this.useAmbientOcclusion && switch(model.useAmbientOcclusion(state, ctx.modelData(), ctx.renderLayer())) {
-            case TRUE -> true;
-            case DEFAULT -> state.getLightEmission(ctx.localSlice(), ctx.pos()) == 0;
-            case FALSE -> false;
-        };
+        boolean canBeSmooth = this.useAmbientOcclusion && Minecraft.useAmbientOcclusion();
         return canBeSmooth ? LightMode.SMOOTH : LightMode.FLAT;
     }
 }

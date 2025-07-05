@@ -1,14 +1,17 @@
 package org.embeddedt.embeddium.api.render.chunk;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+
+import lombok.Getter;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.renderer.block.model.BlockStateModel;
+import org.embeddedt.embeddium.impl.asm.ProxyClassGenerator;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.model.data.ModelData;
 import org.embeddedt.embeddium.impl.render.matrix_stack.CachingPoseStack;
-import org.embeddedt.embeddium.impl.render.world.WorldSliceLocalGenerator;
+import org.embeddedt.embeddium.impl.world.WorldSlice;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
 
@@ -17,8 +20,8 @@ import org.joml.Vector3fc;
  * being freshly constructed for each block to avoid allocations.
  */
 public class BlockRenderContext {
-    private final EmbeddiumBlockAndTintGetter world;
-    private final BlockAndTintGetter localSlice;
+    private static final ProxyClassGenerator<WorldSlice, EmbeddiumBlockAndTintGetter> WORLD_SLICE_LOCAL_GENERATOR = new ProxyClassGenerator<>(WorldSlice.class, "WorldSliceLocal", EmbeddiumBlockAndTintGetter.class);
+    private final EmbeddiumBlockAndTintGetter localSlice;
 
     private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
@@ -26,8 +29,11 @@ public class BlockRenderContext {
 
     private final PoseStack stack = new PoseStack();
 
+    @Getter
+    private final net.minecraft.util.RandomSource random = new net.minecraft.world.level.levelgen.SingleThreadedRandomSource(42L);
+
     private BlockState state;
-    private BakedModel model;
+    private BlockStateModel model;
 
     private long seed;
 
@@ -35,13 +41,12 @@ public class BlockRenderContext {
     private RenderType renderLayer;
 
 
-    public BlockRenderContext(EmbeddiumBlockAndTintGetter world) {
-        this.world = world;
-        this.localSlice = WorldSliceLocalGenerator.generate(world);
+    public BlockRenderContext(WorldSlice world) {
+        this.localSlice = WORLD_SLICE_LOCAL_GENERATOR.generateWrapper(world);
         ((CachingPoseStack)this.stack).embeddium$setCachingEnabled(true);
     }
 
-    public void update(BlockPos pos, BlockPos origin, BlockState state, BakedModel model, long seed, ModelData modelData, RenderType renderLayer) {
+    public void update(BlockPos pos, BlockPos origin, BlockState state, BlockStateModel model, long seed, ModelData modelData, RenderType renderLayer) {
         this.pos.set(pos);
         this.origin.set(origin.getX(), origin.getY(), origin.getZ());
 
@@ -62,16 +67,9 @@ public class BlockRenderContext {
     }
 
     /**
-     * @return The world which the block is being rendered from
-     */
-    public EmbeddiumBlockAndTintGetter world() {
-        return this.world;
-    }
-
-    /**
      * @return The world which the block is being rendered from. Guaranteed to be a new object for each subchunk.
      */
-    public BlockAndTintGetter localSlice() {
+    public EmbeddiumBlockAndTintGetter localSlice() {
         return this.localSlice;
     }
 
@@ -92,7 +90,7 @@ public class BlockRenderContext {
     /**
      * @return The model used for this block
      */
-    public BakedModel model() {
+    public BlockStateModel model() {
         return this.model;
     }
 

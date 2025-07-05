@@ -1,32 +1,43 @@
 package org.embeddedt.embeddium.impl.model.quad.properties;
 
-import net.minecraft.core.Direction;
+import lombok.Getter;
+import org.embeddedt.embeddium.api.util.NormI8;
+
+import java.util.Arrays;
 
 public enum ModelQuadFacing {
-    POS_X,
-    POS_Y,
-    POS_Z,
-    NEG_X,
-    NEG_Y,
-    NEG_Z,
-    UNASSIGNED;
+    POS_X(1, 0, 0, Axis.X),
+    POS_Y(0, 1, 0, Axis.Y),
+    POS_Z(0, 0, 1, Axis.Z),
+    NEG_X(-1, 0, 0, Axis.X),
+    NEG_Y(0, -1, 0, Axis.Y),
+    NEG_Z(0, 0, -1, Axis.Z),
+    UNASSIGNED(0, 0, 0, null);
 
     public static final ModelQuadFacing[] VALUES = ModelQuadFacing.values();
+    public static final ModelQuadFacing[] DIRECTIONS = Arrays.stream(VALUES).filter(facing -> facing != UNASSIGNED).toArray(ModelQuadFacing[]::new);
+    public static final Axis[] AXES = ModelQuadFacing.Axis.values();
 
     public static final int COUNT = VALUES.length;
 
     public static final int NONE = 0;
     public static final int ALL = (1 << COUNT) - 1;
 
-    public static ModelQuadFacing fromDirection(Direction dir) {
-        return switch (dir) {
-            case DOWN   -> NEG_Y;
-            case UP     -> POS_Y;
-            case NORTH  -> NEG_Z;
-            case SOUTH  -> POS_Z;
-            case WEST   -> NEG_X;
-            case EAST   -> POS_X;
-        };
+    @Getter
+    private final int packedNormal;
+
+    @Getter
+    private final int stepX, stepY, stepZ;
+
+    @Getter
+    private final Axis axis;
+
+    ModelQuadFacing(int stepX, int stepY, int stepZ, Axis axis) {
+        this.stepX = stepX;
+        this.stepY = stepY;
+        this.stepZ = stepZ;
+        this.axis = axis;
+        this.packedNormal = NormI8.pack(stepX, stepY, stepZ);
     }
 
     public ModelQuadFacing getOpposite() {
@@ -40,4 +51,22 @@ public enum ModelQuadFacing {
             default -> UNASSIGNED;
         };
     }
+
+    public boolean isDirection() {
+        return this != UNASSIGNED;
+    }
+
+    public enum Axis {
+        X,
+        Y,
+        Z;
+
+        public ModelQuadFacing getFacing(boolean positive) {
+            return switch (this) {
+                case X -> positive ? POS_X : NEG_X;
+                case Y -> positive ? POS_Y : NEG_Y;
+                case Z -> positive ? POS_Z : NEG_Z;
+            };
+        }
+    };
 }

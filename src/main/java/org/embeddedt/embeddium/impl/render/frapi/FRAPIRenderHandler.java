@@ -1,9 +1,10 @@
 package org.embeddedt.embeddium.impl.render.frapi;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.util.RandomSource;
-import org.embeddedt.embeddium.api.render.chunk.BlockRenderContext;
 import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildBuffers;
+import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BlockRenderContext;
+//$ rng_import
+import net.minecraft.util.RandomSource;
 
 public interface FRAPIRenderHandler {
     boolean INDIGO_PRESENT = isIndigoPresent();
@@ -19,5 +20,5 @@ public interface FRAPIRenderHandler {
 
     void reset();
 
-    void renderEmbeddium(BlockRenderContext ctx, ChunkBuildBuffers buffers, PoseStack mStack, RandomSource random);
+    void renderEmbeddium(BlockRenderContext ctx, ChunkBuildBuffers buffers, PoseStack mStack, /*$ rng >>*/ RandomSource random);
 }

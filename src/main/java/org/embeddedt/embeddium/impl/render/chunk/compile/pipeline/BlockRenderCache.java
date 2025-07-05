@@ -1,8 +1,11 @@
 package org.embeddedt.embeddium.impl.render.chunk.compile.pipeline;
 
+import lombok.Getter;
+import org.embeddedt.embeddium.impl.Embeddium;
 import org.embeddedt.embeddium.impl.model.color.ColorProviderRegistry;
+import org.embeddedt.embeddium.impl.model.light.DiffuseProvider;
 import org.embeddedt.embeddium.impl.model.light.LightPipelineProvider;
-import org.embeddedt.embeddium.impl.model.light.data.ArrayLightDataCache;
+import org.embeddedt.embeddium.impl.model.quad.ArrayLightDataCache;
 import org.embeddedt.embeddium.impl.world.WorldSlice;
 import org.embeddedt.embeddium.impl.world.cloned.ChunkRenderContext;
 import net.minecraft.client.Minecraft;
@@ -18,8 +21,9 @@ public class BlockRenderCache {
     private final ArrayLightDataCache lightDataCache;
 
     private final BlockRenderer blockRenderer;
-    private final FluidRenderer fluidRenderer;
     private final LightPipelineProvider lightPipelineProvider;
+    @Getter
+    private final SpecialBlockRenderer specialBlockRenderer;
 
     private final BlockModelShaper blockModels;
     private final WorldSlice worldSlice;
@@ -28,13 +32,16 @@ public class BlockRenderCache {
         this.worldSlice = new WorldSlice(world);
         this.lightDataCache = new ArrayLightDataCache(this.worldSlice);
 
-        LightPipelineProvider lightPipelineProvider = new LightPipelineProvider(this.lightDataCache);
+        LightPipelineProvider lightPipelineProvider = new LightPipelineProvider(this.lightDataCache, DiffuseProvider.NONE,
+                Embeddium.options().quality.useQuadNormalsForShading);
 
         var colorRegistry = new ColorProviderRegistry(client.getBlockColors());
 
-        this.blockRenderer = new BlockRenderer(colorRegistry, lightPipelineProvider);
-        this.fluidRenderer = new FluidRenderer(colorRegistry, lightPipelineProvider);
+        this.blockRenderer = new BlockRenderer(colorRegistry, lightPipelineProvider,
+                null, worldSlice
+        );
         this.lightPipelineProvider = lightPipelineProvider;
+        this.specialBlockRenderer = new SpecialBlockRenderer();
 
         this.blockModels = client.getModelManager().getBlockModelShaper();
     }
@@ -47,15 +54,11 @@ public class BlockRenderCache {
         return this.blockRenderer;
     }
 
-    public FluidRenderer getFluidRenderer() {
-        return this.fluidRenderer;
-    }
-
     /**
      * Initialize the render cache for a new chunk.
      */
     public void init(ChunkRenderContext context) {
-        this.lightDataCache.reset(context.getOrigin());
+        this.lightDataCache.reset(context.getOrigin().minBlockX(), context.getOrigin().minBlockY(), context.getOrigin().minBlockZ());
         this.lightPipelineProvider.reset();
         this.worldSlice.copyData(context);
     }

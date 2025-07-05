@@ -1,5 +1,6 @@
 package org.embeddedt.embeddium.impl.util.sorting;
 
+import com.mojang.blaze3d.vertex.CompactVectorArray;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import org.joml.Vector3f;
 
@@ -23,15 +24,16 @@ public class VertexSorters {
 
     private static abstract class AbstractVertexSorter implements VertexSorting {
         @Override
-        public final int[] sort(Vector3f[] positions) {
+        public final int[] sort(CompactVectorArray positions) {
             return this.mergeSort(positions);
         }
 
-        private int[] mergeSort(Vector3f[] positions) {
-            final var keys = new float[positions.length];
-
-            for (int index = 0; index < positions.length; index++) {
-                keys[index] = this.getKey(positions[index]);
+        private int[] mergeSort(CompactVectorArray positions) {
+            final var keys = new float[positions.size()];
+            final Vector3f temp = new Vector3f(0);
+            for (int index = 0; index < positions.size(); index++) {
+                positions.get(index, temp);
+                keys[index] = this.getKey(temp);
             }
 
             return MergeSort.mergeSort(keys);

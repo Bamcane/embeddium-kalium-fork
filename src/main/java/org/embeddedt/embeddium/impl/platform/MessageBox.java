@@ -65,7 +65,7 @@ public class MessageBox {
             final long hWndOwner;
 
             if (window != null) {
-                hWndOwner = GLFWNativeWin32.glfwGetWin32Window(window.getWindow());
+                hWndOwner = GLFWNativeWin32.glfwGetWin32Window(window.handle());
             } else {
                 hWndOwner = MemoryUtil.NULL;
             }

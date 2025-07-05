@@ -3,6 +3,9 @@ package org.embeddedt.embeddium.impl.gui.frame;
 import org.embeddedt.embeddium.api.options.control.ControlElement;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.neoforged.neoforge.client.event.InputEvent.MouseButton;
+
 import org.embeddedt.embeddium.impl.gui.frame.components.ScrollBarComponent;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -140,10 +143,7 @@ public class ScrollableFrame extends AbstractFrame {
             }
             boolean mouseInViewport = this.viewPortDimension.containsCursor(mouseX, mouseY);
             drawContext.enableScissor(this.viewPortDimension.x(), this.viewPortDimension.y(), this.viewPortDimension.getLimitX(), this.viewPortDimension.getLimitY());
-            drawContext.pose().pushPose();
-            drawContext.pose().translate(applyOffset(this.horizontalScrollBar, 0, true), applyOffset(this.verticalScrollBar, 0, true), 0);
             super.render(drawContext, mouseInViewport ? (int)applyOffset(this.horizontalScrollBar, mouseX, false) : -1, mouseInViewport ? (int)applyOffset(this.verticalScrollBar, mouseY, false) : -1, delta);
-            drawContext.pose().popPose();
             drawContext.disableScissor();
         } else {
             super.render(drawContext, mouseX, mouseY, delta);
@@ -159,18 +159,36 @@ public class ScrollableFrame extends AbstractFrame {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        return (this.canScrollHorizontal && this.horizontalScrollBar.mouseClicked(mouseX, mouseY, button)) || (this.canScrollVertical && this.verticalScrollBar.mouseClicked(mouseX, mouseY, button)) || super.mouseClicked(applyOffset(this.horizontalScrollBar, mouseX, false), applyOffset(this.verticalScrollBar, mouseY, false), button);
+    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
+        if (this.canScrollHorizontal && this.horizontalScrollBar.mouseClicked(event, isDoubleClick)) {
+            return true;
+        }
+        if (this.canScrollVertical && this.verticalScrollBar.mouseClicked(event, isDoubleClick)) {
+            return true;
+        }
+        return super.mouseClicked(event, isDoubleClick);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        return (this.canScrollHorizontal && this.horizontalScrollBar.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) || (this.canScrollVertical && this.verticalScrollBar.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) || super.mouseDragged(applyOffset(this.horizontalScrollBar, mouseX, false), applyOffset(this.verticalScrollBar, mouseY, false), button, deltaX, deltaY);
+    public boolean mouseDragged(MouseButtonEvent event, double mouseX, double mouseY) {
+        if (this.canScrollHorizontal && this.horizontalScrollBar.mouseDragged(event, mouseX, mouseY)) {
+            return true;
+        }
+        if (this.canScrollVertical && this.verticalScrollBar.mouseDragged(event, mouseX, mouseY)) {
+            return true;
+        }
+        return super.mouseDragged(event, mouseX, mouseY);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        return (this.canScrollHorizontal && this.horizontalScrollBar.mouseReleased(mouseX, mouseY, button)) || (this.canScrollVertical && this.verticalScrollBar.mouseReleased(mouseX, mouseY, button)) || super.mouseReleased(applyOffset(this.horizontalScrollBar, mouseX, false), applyOffset(this.verticalScrollBar, mouseY, false), button);
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (this.canScrollHorizontal && this.horizontalScrollBar.mouseReleased(event)) {
+            return true;
+        }
+        if (this.canScrollVertical && this.verticalScrollBar.mouseReleased(event)) {
+            return true;
+        }
+        return super.mouseReleased(event);
     }
 
     @Override

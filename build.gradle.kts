@@ -25,7 +25,7 @@ tasks.withType<JavaCompile> {
 
 version = getModVersion()
 group = "maven_group"()
-println("Embeddium: $version")
+println("Kalium: $version")
 
 base {
     archivesName = "archives_base_name"()
@@ -59,16 +59,10 @@ configurations {
     runtimeClasspath.get().extendsFrom(runtimeOnlyNonPublishable)
 }
 
-fun DependencyHandlerScope.compatCompileOnly(dependency: String) {
-    "compatCompileOnly"(dependency)
-}
-
 dependencies {
-    // FIXME remove when NG not loading this from NF itself is fixed
     implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
-
-    // Mods
-    compatCompileOnly("curse.maven:codechickenlib-242818:${"codechicken_fileid"()}")
+    // FIXME remove when NG not loading this from NF itself is fixed
+    // implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
 
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")
@@ -120,48 +114,7 @@ tasks.register<VerifyAPICompat>("verifyAPICompat") {
     binary = tasks.getByName<Jar>("jar").archiveFile
 }
 
-publishMods {
-    file = tasks.jar.get().archiveFile
-    changelog = "https://github.com/embeddedt/embeddium/wiki/Changelog"
-    val modVer = "mod_version"()
-    if(modVer.contains("beta")) {
-        type = BETA
-    } else if(modVer.contains("alpha")) {
-        type = ALPHA
-    } else {
-        type = STABLE
-    }
-    modLoaders.add("neoforge")
-
-    curseforge {
-        projectId = "908741"
-        accessToken = providers.environmentVariable("CURSEFORGE_TOKEN")
-        minecraftVersions.add("minecraft_version"())
-
-        incompatible {
-            slug = "rubidium"
-        }
-
-        incompatible {
-            slug = "textrues-embeddium-options"
-        }
-    }
-    modrinth {
-        projectId = "sk9rgfiA"
-        accessToken = providers.environmentVariable("MODRINTH_TOKEN")
-        minecraftVersions.add("minecraft_version"())
-
-        incompatible {
-            slug = "rubidium"
-        }
-
-        incompatible {
-            slug = "textrues-embeddium-options"
-        }
-    }
-
-    displayName = "[${"minecraft_version"()}] Embeddium ${"mod_version"()}"
-}
+// some jobs are removed here as unused now.
 
 fun getModVersion(): String {
     return ProjectVersioner.computeVersion(project.projectDir, project.properties)

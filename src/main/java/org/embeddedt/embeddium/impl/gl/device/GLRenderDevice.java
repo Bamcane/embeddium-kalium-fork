@@ -7,8 +7,9 @@ import org.embeddedt.embeddium.impl.gl.state.GlStateTracker;
 import org.embeddedt.embeddium.impl.gl.sync.GlFence;
 import org.embeddedt.embeddium.impl.gl.tessellation.*;
 import org.embeddedt.embeddium.impl.gl.util.EnumBitField;
+import org.embeddedt.embeddium.impl.gl.util.VAOUtil;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.opengl.*;
-import com.mojang.blaze3d.vertex.BufferUploader;
 import java.nio.ByteBuffer;
 
 public class GLRenderDevice implements RenderDevice {
@@ -20,6 +21,11 @@ public class GLRenderDevice implements RenderDevice {
 
     private boolean isActive;
     private GlTessellation activeTessellation;
+
+    // TODO replace this with something less ugly
+    public static Runnable VANILLA_STATE_RESETTER = () -> {
+        throw new IllegalStateException("The host mod should replace the VANILLA_STATE_RESETTER with an implementation specific to the platform.");
+    };
 
     @Override
     public CommandList createCommandList() {
@@ -34,7 +40,7 @@ public class GLRenderDevice implements RenderDevice {
             return;
         }
 
-        BufferUploader.reset();
+        VANILLA_STATE_RESETTER.run();
 
         this.stateTracker.clear();
         this.isActive = true;
@@ -45,6 +51,11 @@ public class GLRenderDevice implements RenderDevice {
         if (!this.isActive) {
             return;
         }
+
+        //? if <1.17
+        /*VertexBuffer.unbind();*/
+
+        VANILLA_STATE_RESETTER.run();
 
         this.stateTracker.clear();
         this.isActive = false;
@@ -76,7 +87,7 @@ public class GLRenderDevice implements RenderDevice {
         @Override
         public void bindVertexArray(GlVertexArray array) {
             if (this.stateTracker.makeVertexArrayActive(array)) {
-                GL30C.glBindVertexArray(array.handle());
+                VAOUtil.glBindVertexArray(array.handle());
             }
         }
 
@@ -89,24 +100,29 @@ public class GLRenderDevice implements RenderDevice {
         }
 
         @Override
-        public void copyBufferSubData(GlBuffer src, GlBuffer dst, long readOffset, long writeOffset, long bytes) {
-            this.bindBuffer(GlBufferTarget.COPY_READ_BUFFER, src);
-            this.bindBuffer(GlBufferTarget.COPY_WRITE_BUFFER, dst);
+        public void uploadData(GlMutableBuffer glBuffer, long ptr, long bytes, GlBufferUsage usage) {
+            this.bindBuffer(GlBufferTarget.ARRAY_BUFFER, glBuffer);
 
-            GL31C.glCopyBufferSubData(GL31C.GL_COPY_READ_BUFFER, GL31C.GL_COPY_WRITE_BUFFER, readOffset, writeOffset, bytes);
+            GL20C.nglBufferData(GlBufferTarget.ARRAY_BUFFER.getTargetParameter(), bytes, ptr, usage.getId());
+            glBuffer.setSize(bytes);
         }
 
         @Override
-        public void bindBuffer(GlBufferTarget target, GlBuffer buffer) {
+        public void copyBufferSubData(GlBuffer src, GlBuffer dst, long readOffset, long writeOffset, long bytes) {
+            GLRenderDevice.this.functions.bufferCopyFunctions().copyBufferSubData(this, src, dst, readOffset, writeOffset, bytes);
+        }
+
+        @Override
+        public void bindBuffer(GlBufferTarget target, @Nullable GlBuffer buffer) {
             if (this.stateTracker.makeBufferActive(target, buffer)) {
-                GL20C.glBindBuffer(target.getTargetParameter(), buffer.handle());
+                GL20C.glBindBuffer(target.getTargetParameter(), buffer != null ? buffer.handle() : 0);
             }
         }
 
         @Override
         public void unbindVertexArray() {
             if (this.stateTracker.makeVertexArrayActive(null)) {
-                GL30C.glBindVertexArray(GlVertexArray.NULL_ARRAY_ID);
+                VAOUtil.glBindVertexArray(GlVertexArray.NULL_ARRAY_ID);
             }
         }
 
@@ -126,20 +142,14 @@ public class GLRenderDevice implements RenderDevice {
 
             this.stateTracker.notifyBufferDeleted(buffer);
 
-            int handle = buffer.handle();
-            buffer.invalidateHandle();
-
-            GL20C.glDeleteBuffers(handle);
+            buffer.delete();
         }
 
         @Override
         public void deleteVertexArray(GlVertexArray vertexArray) {
             this.stateTracker.notifyVertexArrayDeleted(vertexArray);
 
-            int handle = vertexArray.handle();
-            vertexArray.invalidateHandle();
-
-            GL30C.glDeleteVertexArrays(handle);
+            vertexArray.delete();
         }
 
         @Override
@@ -189,7 +199,8 @@ public class GLRenderDevice implements RenderDevice {
 
             this.bindBuffer(GlBufferTarget.ARRAY_BUFFER, buffer);
 
-            ByteBuffer buf = GL32C.glMapBufferRange(GlBufferTarget.ARRAY_BUFFER.getTargetParameter(), offset, length, flags.getBitField());
+            ByteBuffer buf = GLRenderDevice.this.functions.bufferMapRangeFunctions()
+                    .mapBufferRange(buffer, offset, length, flags);
 
             if (buf == null) {
                 throw new RuntimeException("Failed to map buffer");
@@ -246,18 +257,10 @@ public class GLRenderDevice implements RenderDevice {
             GlImmutableBuffer buffer = new GlImmutableBuffer(flags);
 
             this.bindBuffer(GlBufferTarget.ARRAY_BUFFER, buffer);
-            GLRenderDevice.this.functions.getBufferStorageFunctions()
+            GLRenderDevice.this.functions.bufferStorageFunctions()
                     .createBufferStorage(GlBufferTarget.ARRAY_BUFFER, bufferSize, flags);
 
             return buffer;
-        }
-
-        @Override
-        public GlTessellation createTessellation(GlPrimitiveType primitiveType, TessellationBinding[] bindings) {
-            GlVertexArrayTessellation tessellation = new GlVertexArrayTessellation(new GlVertexArray(), primitiveType, bindings);
-            tessellation.init(this);
-
-            return tessellation;
         }
     }
 
@@ -267,15 +270,18 @@ public class GLRenderDevice implements RenderDevice {
         }
 
         @Override
-        public void multiDrawElementsBaseVertex(MultiDrawBatch batch, GlIndexType indexType) {
-            GlPrimitiveType primitiveType = GLRenderDevice.this.activeTessellation.getPrimitiveType();
-
-            GL32C.nglMultiDrawElementsBaseVertex(primitiveType.getId(),
+        public void multiDrawElementsBaseVertex(MultiDrawBatch batch, GlPrimitiveType primitiveType, GlIndexType indexType) {
+            GLRenderDevice.this.functions.multidrawFunctions().multiDrawElementsBaseVertex(primitiveType.getId(),
                     batch.pElementCount,
                     indexType.getFormatId(),
                     batch.pElementPointer,
                     batch.size(),
                     batch.pBaseVertex);
+        }
+
+        @Override
+        public void multiDrawElementsIndirect(GlBuffer indirectBuffer, int count, GlPrimitiveType primitiveType, GlIndexType indexType) {
+            GL43C.glMultiDrawElementsIndirect(primitiveType.getId(), indexType.getFormatId(), 0, count, 0);
         }
 
         @Override

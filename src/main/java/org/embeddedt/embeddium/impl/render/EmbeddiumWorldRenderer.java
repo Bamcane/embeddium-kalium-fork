@@ -1,79 +1,67 @@
 package org.embeddedt.embeddium.impl.render;
 
-import com.google.common.collect.Iterators;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.SheetedDecalTextureGenerator;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import net.minecraft.client.renderer.entity.EntityRenderer;
-import net.minecraft.util.profiling.Profiler;
-import org.embeddedt.embeddium.impl.Embeddium;
-import org.embeddedt.embeddium.impl.gl.device.CommandList;
-import org.embeddedt.embeddium.impl.gl.device.RenderDevice;
-import org.embeddedt.embeddium.impl.mixin.features.render.entity.cull.EntityRendererAccessor;
-import org.embeddedt.embeddium.impl.model.quad.blender.BlendedColorProvider;
-import org.embeddedt.embeddium.impl.render.chunk.ChunkRenderMatrices;
-import org.embeddedt.embeddium.impl.render.chunk.RenderSectionManager;
-import org.embeddedt.embeddium.impl.render.chunk.lists.ChunkRenderList;
-import org.embeddedt.embeddium.impl.render.chunk.lists.SortedRenderLists;
-import org.embeddedt.embeddium.impl.render.chunk.map.ChunkTracker;
-import org.embeddedt.embeddium.impl.render.chunk.map.ChunkTrackerHolder;
-import org.embeddedt.embeddium.impl.render.chunk.terrain.DefaultTerrainRenderPasses;
-import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
-import org.embeddedt.embeddium.impl.render.viewport.Viewport;
-import org.embeddedt.embeddium.impl.util.NativeBuffer;
-import org.embeddedt.embeddium.impl.world.WorldRendererExtended;
+import lombok.Setter;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.resources.model.ModelBakery;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.BlockDestructionProgress;
 import net.minecraft.util.Mth;
-import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
-import net.neoforged.fml.loading.FMLLoader;
+import org.embeddedt.embeddium.impl.Embeddium;
+import org.embeddedt.embeddium.impl.gl.device.CommandList;
+import org.embeddedt.embeddium.impl.model.color.BlendedColorProvider;
+import org.embeddedt.embeddium.impl.render.chunk.ChunkRenderMatricesBuilder;
+import org.embeddedt.embeddium.impl.render.chunk.ModernRenderSectionManager;
+import org.embeddedt.embeddium.impl.render.chunk.ChunkRenderMatrices;
+import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkMeshFormats;
+import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexType;
+import org.embeddedt.embeddium.impl.render.terrain.SimpleWorldRenderer;
+import org.embeddedt.embeddium.impl.render.viewport.Viewport;
+import org.embeddedt.embeddium.impl.util.ClientUtil;
+import org.embeddedt.embeddium.impl.util.WorldUtil;
+import org.embeddedt.embeddium.impl.world.WorldRendererExtended;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
-import java.util.*;
-import java.util.function.Consumer;
+import java.util.List;
+import java.util.Objects;
+import java.util.SortedSet;
+import java.util.function.Predicate;
 
-/**
- * Provides an extension to vanilla's {@link LevelRenderer}.
- */
-public class EmbeddiumWorldRenderer {
-    private static final boolean ENABLE_BLOCKENTITY_CULLING = FMLLoader.getLoadingModList().getModFileById("valkyrienskies") == null;
-
+public class EmbeddiumWorldRenderer extends SimpleWorldRenderer<ClientLevel, ModernRenderSectionManager,
+        net.minecraft.client.renderer.RenderType,
+        BlockEntity, EmbeddiumWorldRenderer.BlockEntityRenderContext> {
     private final Minecraft client;
 
-    private ClientLevel world;
-    private int renderDistance;
+    // We track whether a block entity uses custom block outline rendering, so that the outline postprocessing
+    // shader will be enabled appropriately
+    private boolean blockEntityRequestedOutline;
 
-    private double lastCameraX, lastCameraY, lastCameraZ;
-    private double lastCameraPitch, lastCameraYaw;
-    private float lastFogDistance;
+    @Setter
+    private Matrix4f currentChunkRenderPose;
 
     private boolean useEntityCulling;
 
-    private Viewport currentViewport;
 
-    private RenderSectionManager renderSectionManager;
+    public EmbeddiumWorldRenderer(Minecraft client) {
+        this.client = client;
+    }
 
     /**
-     * @return The SodiumWorldRenderer based on the current dimension
+     * @return The EmbeddiumWorldRenderer based on the current dimension
      */
     public static EmbeddiumWorldRenderer instance() {
         var instance = instanceNullable();
@@ -86,7 +74,7 @@ public class EmbeddiumWorldRenderer {
     }
 
     /**
-     * @return The SodiumWorldRenderer based on the current dimension, or null if none is attached
+     * @return The EmbeddiumWorldRenderer based on the current dimension, or null if none is attached
      */
     public static EmbeddiumWorldRenderer instanceNullable() {
         var world = Minecraft.getInstance().levelRenderer;
@@ -98,423 +86,112 @@ public class EmbeddiumWorldRenderer {
         return null;
     }
 
-    public EmbeddiumWorldRenderer(Minecraft client) {
-        this.client = client;
+    @Override
+    public int getMinimumBuildHeight() {
+        return WorldUtil.getMinBuildHeight(this.world);
     }
 
-    public void setWorld(ClientLevel world) {
-        // Check that the world is actually changing
-        if (this.world == world) {
-            return;
-        }
-
-        // If we have a world is already loaded, unload the renderer
-        if (this.world != null) {
-            this.unloadWorld();
-        }
-
-        // If we're loading a new world, load the renderer
-        if (world != null) {
-            this.loadWorld(world);
-        }
+    @Override
+    public int getMaximumBuildHeight() {
+        return WorldUtil.getMaxBuildHeight(this.world);
     }
 
-    private void loadWorld(ClientLevel world) {
-        this.world = world;
-
-        try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
-            this.initRenderer(commandList);
-        }
-    }
-
-    private void unloadWorld() {
-        if (this.renderSectionManager != null) {
-            this.renderSectionManager.destroy();
-            this.renderSectionManager = null;
-        }
-
-        this.world = null;
-    }
-
-    /**
-     * @return The number of chunk renders which are visible in the current camera's frustum
-     */
-    public int getVisibleChunkCount() {
-        return this.renderSectionManager.getVisibleChunkCount();
-    }
-
-    /**
-     * Notifies the chunk renderer that the graph scene has changed and should be re-computed.
-     */
-    public void scheduleTerrainUpdate() {
-        // BUG: seems to be called before init
-        if (this.renderSectionManager != null) {
-            this.renderSectionManager.markGraphDirty();
-        }
-    }
-
-    /**
-     * @return True if no chunks are pending rebuilds
-     */
-    public boolean isTerrainRenderComplete() {
-        return this.renderSectionManager.getBuilder().isBuildQueueEmpty();
-    }
-
-    /**
-     * Called prior to any chunk rendering in order to update necessary state.
-     */
-    public void setupTerrain(Camera camera,
-                             Viewport viewport,
-                             int frame,
-                             boolean spectator,
-                             boolean updateChunksImmediately) {
-        NativeBuffer.reclaim(false);
-
-        this.processChunkEvents();
-
-        this.useEntityCulling = Embeddium.options().performance.useEntityCulling;
-
-        if (this.client.options.getEffectiveRenderDistance() != this.renderDistance) {
-            this.reload();
-        }
-
-        ProfilerFiller profiler = Profiler.get();
-        profiler.push("camera_setup");
-
-        LocalPlayer player = this.client.player;
-
-        if (player == null) {
-            throw new IllegalStateException("Client instance has no active player entity");
-        }
-
-        Vec3 pos = camera.getPosition();
-        float pitch = camera.getXRot();
-        float yaw = camera.getYRot();
-        float fogDistance = RenderSystem.getShaderFog().end();
-
-        boolean dirty = pos.x != this.lastCameraX || pos.y != this.lastCameraY || pos.z != this.lastCameraZ ||
-                pitch != this.lastCameraPitch || yaw != this.lastCameraYaw || fogDistance != this.lastFogDistance;
-
-        if (dirty) {
-            this.renderSectionManager.markGraphDirty();
-        }
-
-        this.currentViewport = viewport;
-
-        this.lastCameraX = pos.x;
-        this.lastCameraY = pos.y;
-        this.lastCameraZ = pos.z;
-        this.lastCameraPitch = pitch;
-        this.lastCameraYaw = yaw;
-        this.lastFogDistance = fogDistance;
-
-        this.renderSectionManager.runAsyncTasks();
-
-        profiler.popPush("chunk_update");
-
-        this.renderSectionManager.updateChunks(updateChunksImmediately);
-
-        profiler.popPush("chunk_upload");
-
-        this.renderSectionManager.uploadChunks();
-
-        if (this.renderSectionManager.needsUpdate()) {
-            profiler.popPush("chunk_render_lists");
-
-            this.renderSectionManager.update(camera, viewport, frame, spectator);
-        }
-
-        if (updateChunksImmediately) {
-            profiler.popPush("chunk_upload_immediately");
-
-            this.renderSectionManager.uploadChunks();
-        }
-
-        profiler.popPush("chunk_render_tick");
-
-        this.renderSectionManager.tickVisibleRenders();
-
-        profiler.pop();
-
-        Entity.setViewScale(Mth.clamp((double) this.client.options.getEffectiveRenderDistance() / 8.0D, 1.0D, 2.5D) * this.client.options.entityDistanceScaling().get());
-    }
-
-    private void processChunkEvents() {
-        var tracker = ChunkTrackerHolder.get(this.world);
-        tracker.forEachEvent(this.renderSectionManager::onChunkAdded, this.renderSectionManager::onChunkRemoved);
-    }
-
-    /**
-     * Performs a render pass for the given {@link RenderType} and draws all visible chunks for it.
-     */
-    public void drawChunkLayer(RenderType renderLayer, Matrix4f normal, double x, double y, double z) {
-        ChunkRenderMatrices matrices = ChunkRenderMatrices.from(normal);
-
-        List<TerrainRenderPass> passes = DefaultTerrainRenderPasses.RENDER_PASS_MAPPINGS.get(renderLayer);
-
-        if (passes != null) {
-            //noinspection ForLoopReplaceableByForEach
-            for (int i = 0; i < passes.size(); i++) {
-                this.renderSectionManager.renderLayer(matrices, passes.get(i), x, y, z);
-            }
-        }
-    }
-
-    public void reload() {
-        if (this.world == null) {
-            return;
-        }
-
-        try (CommandList commandList = RenderDevice.INSTANCE.createCommandList()) {
-            this.initRenderer(commandList);
-        }
-    }
-
-    private void initRenderer(CommandList commandList) {
-        if (this.renderSectionManager != null) {
-            this.renderSectionManager.destroy();
-            this.renderSectionManager = null;
-        }
-
-        this.renderDistance = this.client.options.getEffectiveRenderDistance();
-
-        this.renderSectionManager = new RenderSectionManager(this.world, this.renderDistance, commandList);
-
-        var tracker = ChunkTrackerHolder.get(this.world);
-        ChunkTracker.forEachChunk(tracker.getReadyChunks(), this.renderSectionManager::onChunkAdded);
+    @Override
+    protected void initRenderer(CommandList commandList) {
+        super.initRenderer(commandList);
 
         // Forge workaround - reset VSync flag
         var window = Minecraft.getInstance().getWindow();
-        if(window != null)
-            window.updateVsync(Minecraft.getInstance().options.enableVsync().get());
+        if (window != null) {
+            window.updateVsync(Minecraft.getInstance().options.enableVsync/*? if >=1.19 {*/().get()/*?}*/);
+        }
 
         BlendedColorProvider.checkBlendingEnabled();
     }
 
-    // We track whether a block entity uses custom block outline rendering, so that the outline postprocessing
-    // shader will be enabled appropriately
-    private boolean blockEntityRequestedOutline;
+    @Override
+    public void setupTerrain(Viewport viewport, CameraState cameraState, int frame, boolean spectator, boolean updateChunksImmediately) {
+        super.setupTerrain(viewport, cameraState, frame, spectator, updateChunksImmediately);
 
-    public boolean didBlockEntityRequestOutline() {
-        return blockEntityRequestedOutline;
+        double entityDistanceScale;
+
+        entityDistanceScale = this.client.options.entityDistanceScaling().get();
+
+        Entity.setViewScale(Mth.clamp((double) getEffectiveRenderDistance() / 8.0D, 1.0D, 2.5D) * entityDistanceScale);
+
+        this.useEntityCulling = Embeddium.options().performance.useEntityCulling;
     }
 
-    /**
-     * {@return an iterator over all visible block entities}
-     * <p>
-     * Note that this method performs significantly more allocations and will generally be less efficient than
-     * {@link EmbeddiumWorldRenderer#forEachVisibleBlockEntity(Consumer)}. It is intended only for situations where using
-     * that method is not feasible.
-     */
-    public Iterator<BlockEntity> blockEntityIterator() {
-        List<Iterator<BlockEntity>> iterators = new ArrayList<>();
-
-        SortedRenderLists renderLists = this.renderSectionManager.getRenderLists();
-        Iterator<ChunkRenderList> renderListIterator = renderLists.iterator();
-
-        while (renderListIterator.hasNext()) {
-            var renderList = renderListIterator.next();
-
-            var renderRegion = renderList.getRegion();
-            var renderSectionIterator = renderList.sectionsWithEntitiesIterator();
-
-            if (renderSectionIterator == null) {
-                continue;
-            }
-
-            while (renderSectionIterator.hasNext()) {
-                var renderSectionId = renderSectionIterator.nextByteAsInt();
-                var renderSection = renderRegion.getSection(renderSectionId);
-
-                var blockEntities = renderSection.getCulledBlockEntities();
-
-                if (blockEntities == null) {
-                    continue;
-                }
-
-                iterators.add(Iterators.forArray(blockEntities));
-            }
-        }
-
-        for (var renderSection : this.renderSectionManager.getSectionsWithGlobalEntities()) {
-            var blockEntities = renderSection.getGlobalBlockEntities();
-
-            if (blockEntities == null) {
-                continue;
-            }
-
-            iterators.add(Iterators.forArray(blockEntities));
-        }
-
-        if(iterators.isEmpty()) {
-            return Collections.emptyIterator();
-        } else {
-            return Iterators.concat(iterators.iterator());
-        }
+    @Override
+    public int getEffectiveRenderDistance() {
+        return Minecraft.getInstance().options.getEffectiveRenderDistance();
     }
 
-    public void forEachVisibleBlockEntity(Consumer<BlockEntity> consumer) {
-        SortedRenderLists renderLists = this.renderSectionManager.getRenderLists();
-        Iterator<ChunkRenderList> renderListIterator = renderLists.iterator();
-
-        while (renderListIterator.hasNext()) {
-            var renderList = renderListIterator.next();
-
-            var renderRegion = renderList.getRegion();
-            var renderSectionIterator = renderList.sectionsWithEntitiesIterator();
-
-            if (renderSectionIterator == null) {
-                continue;
-            }
-
-            while (renderSectionIterator.hasNext()) {
-                var renderSectionId = renderSectionIterator.nextByteAsInt();
-                var renderSection = renderRegion.getSection(renderSectionId);
-
-                var blockEntities = renderSection.getCulledBlockEntities();
-
-                if (blockEntities == null) {
-                    continue;
-                }
-
-                for (BlockEntity blockEntity : blockEntities) {
-                    consumer.accept(blockEntity);
-                }
-            }
-        }
-
-        for (var renderSection : this.renderSectionManager.getSectionsWithGlobalEntities()) {
-            var blockEntities = renderSection.getGlobalBlockEntities();
-
-            if (blockEntities == null) {
-                continue;
-            }
-
-            for (var blockEntity : blockEntities) {
-                consumer.accept(blockEntity);
-            }
-        }
+    @Override
+    protected ChunkRenderMatrices createChunkRenderMatrices() {
+        return ChunkRenderMatricesBuilder.from(Objects.requireNonNull(currentChunkRenderPose, "chunk render pose not set"));
     }
 
-    public void renderBlockEntities(PoseStack poseStack,
-                                    RenderBuffers bufferBuilders,
-                                    Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
-                                    Camera camera,
-                                    float tickDelta) {
-        MultiBufferSource.BufferSource immediate = bufferBuilders.bufferSource();
+    private ChunkVertexType chooseVertexType() {
 
-        Vec3 cameraPos = camera.getPosition();
-        double x = cameraPos.x();
-        double y = cameraPos.y();
-        double z = cameraPos.z();
+        if (Embeddium.canUseVanillaVertices()) {
+            return ChunkMeshFormats.VANILLA_LIKE;
+        }
 
-        BlockEntityRenderDispatcher blockEntityRenderer = Minecraft.getInstance().getBlockEntityRenderDispatcher();
+        return ChunkMeshFormats.COMPACT;
+    }
 
+    @Override
+    protected ModernRenderSectionManager createRenderSectionManager(CommandList commandList) {
+        return ModernRenderSectionManager.create(chooseVertexType(), this.world, this.renderDistance, commandList);
+    }
+
+    /*
+    @Override
+    public int renderBlockEntities(BlockEntityRenderContext blockEntityRenderContext) {
         this.blockEntityRequestedOutline = false;
-        
-        this.renderBlockEntities(poseStack, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer);
-        this.renderGlobalBlockEntities(poseStack, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer);
+        return super.renderBlockEntities(blockEntityRenderContext);
     }
 
-    private <T extends BlockEntity> boolean isBlockEntityRendererVisible(BlockEntityRenderDispatcher dispatcher, T entity) {
-        BlockEntityRenderer<T> renderer = dispatcher.getRenderer(entity);
-        if(renderer == null) {
-            return false;
-        }
-        AABB box = renderer.getRenderBoundingBox(entity);
-        return currentViewport.isBoxVisible(box);
-    }
+    @Override
+    protected void renderBlockEntityList(List<BlockEntity> list, BlockEntityRenderContext blockEntityRenderContext) {
+        var blockEntityFilter = blockEntityRenderContext.blockEntityFilter();
+        var viewport = this.currentViewport;
+        var dispatcher = Minecraft.getInstance().getBlockEntityRenderDispatcher();
 
-    private void renderBlockEntities(PoseStack matrices,
-                                     RenderBuffers bufferBuilders,
-                                     Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
-                                     float tickDelta,
-                                     MultiBufferSource.BufferSource immediate,
-                                     double x,
-                                     double y,
-                                     double z,
-                                     BlockEntityRenderDispatcher blockEntityRenderer) {
-        SortedRenderLists renderLists = this.renderSectionManager.getRenderLists();
-        Iterator<ChunkRenderList> renderListIterator = renderLists.iterator();
-
-        while (renderListIterator.hasNext()) {
-            var renderList = renderListIterator.next();
-
-            var renderRegion = renderList.getRegion();
-            var renderSectionIterator = renderList.sectionsWithEntitiesIterator();
-
-            if (renderSectionIterator == null) {
+        for (var blockEntity : list) {
+            if (blockEntityFilter != null && !blockEntityFilter.test(blockEntity)) {
                 continue;
             }
 
-            while (renderSectionIterator.hasNext()) {
-                var renderSectionId = renderSectionIterator.nextByteAsInt();
-                var renderSection = renderRegion.getSection(renderSectionId);
-
-                var blockEntities = renderSection.getCulledBlockEntities();
-
-                if (blockEntities == null) {
-                    continue;
-                }
-
-                for (BlockEntity blockEntity : blockEntities) {
-                    if(ENABLE_BLOCKENTITY_CULLING && !isBlockEntityRendererVisible(blockEntityRenderer, blockEntity))
-                        continue;
-
-                    renderBlockEntity(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, blockEntity);
-                }
+            if (blockEntity.hasCustomOutlineRendering(this.client.player)) {
+                this.blockEntityRequestedOutline = true;
             }
+
+            renderBlockEntity(blockEntityRenderContext, dispatcher, blockEntity);
         }
+
     }
 
-    private void renderGlobalBlockEntities(PoseStack matrices,
-                                           RenderBuffers bufferBuilders,
-                                           Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
-                                           float tickDelta,
-                                           MultiBufferSource.BufferSource immediate,
-                                           double x,
-                                           double y,
-                                           double z,
-                                           BlockEntityRenderDispatcher blockEntityRenderer) {
-        for (var renderSection : this.renderSectionManager.getSectionsWithGlobalEntities()) {
-            var blockEntities = renderSection.getGlobalBlockEntities();
-
-            if (blockEntities == null) {
-                continue;
-            }
-
-            for (var blockEntity : blockEntities) {
-                if(ENABLE_BLOCKENTITY_CULLING && !isBlockEntityRendererVisible(blockEntityRenderer, blockEntity))
-                    continue;
-
-                renderBlockEntity(matrices, bufferBuilders, blockBreakingProgressions, tickDelta, immediate, x, y, z, blockEntityRenderer, blockEntity);
-            }
-        }
-    }
-
-    private static void renderBlockEntity(PoseStack matrices,
-                                          RenderBuffers bufferBuilders,
-                                          Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
-                                          float tickDelta,
-                                          MultiBufferSource.BufferSource immediate,
-                                          double x,
-                                          double y,
-                                          double z,
+    private static void renderBlockEntity(BlockEntityRenderContext context,
                                           BlockEntityRenderDispatcher dispatcher,
                                           BlockEntity entity) {
         BlockPos pos = entity.getBlockPos();
 
-        matrices.pushPose();
-        matrices.translate((double) pos.getX() - x, (double) pos.getY() - y, (double) pos.getZ() - z);
+        var matrices = context.pose();
 
+        matrices.pushPose();
+        matrices.translate((double) pos.getX() - context.x(), (double) pos.getY() - context.y(), (double) pos.getZ() - context.z());
+
+        MultiBufferSource immediate = context.renderBuffers().bufferSource();
         MultiBufferSource consumer = immediate;
-        SortedSet<BlockDestructionProgress> breakingInfo = blockBreakingProgressions.get(pos.asLong());
+        SortedSet<BlockDestructionProgress> breakingInfo = context.blockBreakingProgressions().get(pos.asLong());
 
         if (breakingInfo != null && !breakingInfo.isEmpty()) {
             int stage = breakingInfo.last().getProgress();
 
             if (stage >= 0) {
-                var bufferBuilder = bufferBuilders.crumblingBufferSource()
+                var bufferBuilder = context.renderBuffers().crumblingBufferSource()
                         .getBuffer(ModelBakery.DESTROY_TYPES.get(stage));
 
                 PoseStack.Pose entry = matrices.last();
@@ -525,7 +202,7 @@ public class EmbeddiumWorldRenderer {
         }
 
         try {
-            dispatcher.render(entity, tickDelta, matrices, consumer);
+            dispatcher.submit(entity, context.tickDelta(), matrices, consumer);
         } catch(RuntimeException e) {
             // We catch errors from removed block entities here, because we often end up being faster
             // than vanilla, and rendering them when they wouldn't be rendered by vanilla, which can
@@ -539,112 +216,47 @@ public class EmbeddiumWorldRenderer {
 
         matrices.popPose();
     }
+    */
 
-    // the volume of a section multiplied by the number of sections to be checked at most
-    private static final double MAX_ENTITY_CHECK_VOLUME = 16 * 16 * 16 * 15;
-
-    private static boolean isInfiniteExtentsBox(AABB box) {
-        return Double.isInfinite(box.minX) || Double.isInfinite(box.minY) || Double.isInfinite(box.minZ)
-            || Double.isInfinite(box.maxX) || Double.isInfinite(box.maxY) || Double.isInfinite(box.maxZ);
+    public boolean didBlockEntityRequestOutline() {
+        return blockEntityRequestedOutline;
     }
 
     /**
      * Returns whether or not the entity intersects with any visible chunks in the graph.
      * @return True if the entity is visible, otherwise false
      */
-    public boolean isEntityVisible(Entity entity, EntityRenderer renderer) {
-        if (!this.useEntityCulling) {
+    public boolean isEntityVisible(Entity entity, AABB boundingBox) {
+        if (!this.useEntityCulling || this.renderSectionManager.isInShadowPass()) {
             return true;
         }
 
         // Ensure entities with outlines or nametags are always visible
-        if (this.client.shouldEntityAppearGlowing(entity) || entity.shouldShowName()) {
+        if (ClientUtil.shouldEntityAppearGlowing(entity) || entity.shouldShowName()) {
             return true;
         }
 
-        var accessor = (EntityRendererAccessor)renderer;
-        AABB box = accessor.callGetBoundingBoxForCulling(entity);
+        return this.isBoxVisible(boundingBox);
+    }
 
-        if (isInfiniteExtentsBox(box)) {
-            return true;
-        }
-
-        // bail on very large entities to avoid checking many sections
-        double entityVolume = (box.maxX - box.minX) * (box.maxY - box.minY) * (box.maxZ - box.minZ);
-        if (entityVolume > MAX_ENTITY_CHECK_VOLUME) {
-            // TODO: do a frustum check instead, even large entities aren't visible if they're outside the frustum
-            return true;
-        }
-
+    public boolean isBoxVisible(AABB box) {
         return this.isBoxVisible(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
     }
 
-    public boolean isBoxVisible(double x1, double y1, double z1, double x2, double y2, double z2) {
-        // Boxes outside the valid world height will never map to a rendered chunk
-        // Always render these boxes or they'll be culled incorrectly!
-        if (y2 < this.world.getMinY() + 0.5D || y1 > this.world.getMaxY() - 0.5D) {
-            return true;
-        }
-
-        int minX = SectionPos.posToSectionCoord(x1 - 0.5D);
-        int minY = SectionPos.posToSectionCoord(y1 - 0.5D);
-        int minZ = SectionPos.posToSectionCoord(z1 - 0.5D);
-
-        int maxX = SectionPos.posToSectionCoord(x2 + 0.5D);
-        int maxY = SectionPos.posToSectionCoord(y2 + 0.5D);
-        int maxZ = SectionPos.posToSectionCoord(z2 + 0.5D);
-
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    if (this.renderSectionManager.isSectionVisible(x, y, z)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
+    public void setCurrentViewport(Viewport viewport) {
+        this.currentViewport = viewport;
     }
 
-    public String getChunksDebugString() {
-        // C: visible/total D: distance
-        // TODO: add dirty and queued counts
-        return String.format("C: %d/%d D: %d", this.renderSectionManager.getVisibleChunkCount(), this.renderSectionManager.getTotalSections(), this.renderDistance);
-    }
+    public record BlockEntityRenderContext(
+            PoseStack pose,
+            RenderBuffers renderBuffers,
+            double x,
+            double y,
+            double z,
+            Long2ObjectMap<SortedSet<BlockDestructionProgress>> blockBreakingProgressions,
+            float tickDelta,
+            @Nullable Predicate<BlockEntity> blockEntityFilter
+    ) {
 
-    /**
-     * Schedules chunk rebuilds for all chunks in the specified block region.
-     */
-    public void scheduleRebuildForBlockArea(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, boolean important) {
-        this.scheduleRebuildForChunks(minX >> 4, minY >> 4, minZ >> 4, maxX >> 4, maxY >> 4, maxZ >> 4, important);
-    }
-
-    /**
-     * Schedules chunk rebuilds for all chunks in the specified chunk region.
-     */
-    public void scheduleRebuildForChunks(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, boolean important) {
-        for (int chunkX = minX; chunkX <= maxX; chunkX++) {
-            for (int chunkY = minY; chunkY <= maxY; chunkY++) {
-                for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
-                    this.scheduleRebuildForChunk(chunkX, chunkY, chunkZ, important);
-                }
-            }
-        }
-    }
-
-    /**
-     * Schedules a chunk rebuild for the render belonging to the given chunk section position.
-     */
-    public void scheduleRebuildForChunk(int x, int y, int z, boolean important) {
-        this.renderSectionManager.scheduleRebuild(x, y, z, important);
-    }
-
-    public Collection<String> getDebugStrings() {
-        return this.renderSectionManager.getDebugStrings();
-    }
-
-    public boolean isSectionReady(int x, int y, int z) {
-        return this.renderSectionManager.isSectionBuilt(x, y, z);
     }
 }

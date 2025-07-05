@@ -20,33 +20,33 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 @Mixin(BufferBuilder.class)
 public abstract class BufferBuilderMixin implements VertexBufferWriter {
     @Shadow
+    private int vertices;
+
+    @Shadow
     @Final
     private ByteBufferBuilder buffer;
 
     @Shadow
-    private int vertices;
+    private long vertexPointer;
 
-    @Shadow
-    private int elementsToFill;
+    @Unique
+    private VertexFormatDescription embeddium$format;
 
     @Shadow
     @Final
     private int vertexSize;
 
     @Shadow
-    private long vertexPointer;
-
-    @Unique
-    private VertexFormatDescription embeddiumFormat;
+    private int elementsToFill;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void onFormatChanged(ByteBufferBuilder buffer, VertexFormat.Mode mode, VertexFormat format, CallbackInfo ci) {
-        this.embeddiumFormat = VertexFormatRegistry.instance().get(format);
+        this.embeddium$format = VertexFormatRegistry.instance().get(format);
     }
 
     @Override
     public boolean canUseIntrinsics() {
-        return this.embeddiumFormat != null && this.embeddiumFormat.isSimpleFormat() && this.buffer != null;
+        return this.embeddium$format != null && this.embeddium$format.isSimpleFormat();
     }
 
     @Override
@@ -56,7 +56,7 @@ public abstract class BufferBuilderMixin implements VertexBufferWriter {
         // Ensure that there is space for the data we're about to push
         long dst = this.buffer.reserve(length);
 
-        if (format == this.embeddiumFormat) {
+        if (format == this.embeddium$format) {
             // The layout is the same, so we can just perform a memory copy
             // The stride of a vertex format is always 4 bytes, so this aligned copy is always safe
             MemoryIntrinsics.copyMemory(src, dst, length);
@@ -73,7 +73,7 @@ public abstract class BufferBuilderMixin implements VertexBufferWriter {
     @Unique
     private void copySlow(long src, long dst, int count, VertexFormatDescription format) {
         VertexSerializerRegistry.instance()
-                .get(format, this.embeddiumFormat)
+                .get(format, this.embeddium$format)
                 .serialize(src, dst, count);
     }
 }

@@ -2,17 +2,18 @@ package org.embeddedt.embeddium.impl.render.chunk.vertex.format.impl;
 
 import org.embeddedt.embeddium.impl.gl.attribute.GlVertexAttributeFormat;
 import org.embeddedt.embeddium.impl.gl.attribute.GlVertexFormat;
-import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkMeshAttribute;
 import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexEncoder;
 import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexType;
 import org.lwjgl.system.MemoryUtil;
 
+import java.util.Map;
+
 public class CompactChunkVertex implements ChunkVertexType {
-    public static final GlVertexFormat<ChunkMeshAttribute> VERTEX_FORMAT = GlVertexFormat.builder(ChunkMeshAttribute.class, 20)
-            .addElement(ChunkMeshAttribute.POSITION_MATERIAL_MESH, 0, GlVertexAttributeFormat.UNSIGNED_SHORT, 4, false, true)
-            .addElement(ChunkMeshAttribute.COLOR_SHADE, 8, GlVertexAttributeFormat.UNSIGNED_BYTE, 4, true, false)
-            .addElement(ChunkMeshAttribute.BLOCK_TEXTURE, 12, GlVertexAttributeFormat.UNSIGNED_SHORT, 2, false, false)
-            .addElement(ChunkMeshAttribute.LIGHT_TEXTURE, 16, GlVertexAttributeFormat.UNSIGNED_SHORT, 2, false, true)
+    public static final GlVertexFormat VERTEX_FORMAT = GlVertexFormat.builder(20)
+            .addElement("a_PosId", 0, GlVertexAttributeFormat.UNSIGNED_SHORT, 4, false, true)
+            .addElement("a_Color", 8, GlVertexAttributeFormat.UNSIGNED_BYTE, 4, true, false)
+            .addElement("a_TexCoord", 12, GlVertexAttributeFormat.UNSIGNED_SHORT, 2, false, false)
+            .addElement("a_LightCoord", 16, GlVertexAttributeFormat.UNSIGNED_SHORT, 2, false, true)
             .build();
 
     public static final int STRIDE = 20;
@@ -43,12 +44,12 @@ public class CompactChunkVertex implements ChunkVertexType {
     }
 
     @Override
-    public GlVertexFormat<ChunkMeshAttribute> getVertexFormat() {
+    public GlVertexFormat getVertexFormat() {
         return VERTEX_FORMAT;
     }
 
     @Override
-    public ChunkVertexEncoder getEncoder() {
+    public ChunkVertexEncoder createEncoder() {
         return (ptr, material, vertex, sectionIndex) -> {
             MemoryUtil.memPutShort(ptr + 0, encodePosition(vertex.x));
             MemoryUtil.memPutShort(ptr + 2, encodePosition(vertex.y));
@@ -66,6 +67,13 @@ public class CompactChunkVertex implements ChunkVertexType {
 
             return ptr + STRIDE;
         };
+    }
+
+    @Override
+    public Map<String, String> getDefines() {
+        var map = ChunkVertexType.super.getDefines();
+        map.put("USE_VERTEX_COMPRESSION", "");
+        return map;
     }
 
     private static short encodePosition(float value) {

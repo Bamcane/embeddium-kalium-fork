@@ -1,6 +1,5 @@
 package org.embeddedt.embeddium.impl.sodium;
 
-import net.fabricmc.loader.api.FabricLoader;
 import org.embeddedt.embeddium.api.service.FlawlessFramesService;
 
 import java.util.ServiceLoader;
@@ -25,6 +24,7 @@ public class FlawlessFrames {
 
     @SuppressWarnings("unchecked")
     public static void onClientInitialization() {
+        /*
         Function<String, Consumer<Boolean>> provider = name -> {
             Object token = new Object();
             return active -> {
@@ -46,6 +46,7 @@ public class FlawlessFrames {
         ServiceLoader.load(FlawlessFramesService.class, FlawlessFrames.class.getClassLoader()).stream()
                 .map(ServiceLoader.Provider::get)
                 .forEach(s -> s.acceptController(provider));
+        */
     }
 
     public static boolean isActive() {

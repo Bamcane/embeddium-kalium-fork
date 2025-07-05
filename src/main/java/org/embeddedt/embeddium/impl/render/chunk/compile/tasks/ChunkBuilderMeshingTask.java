@@ -1,17 +1,24 @@
 package org.embeddedt.embeddium.impl.render.chunk.compile.tasks;
 
-import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Reference2ReferenceMap;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.world.entity.Display.BlockDisplay.BlockRenderState;
+import net.minecraft.world.level.block.AirBlock;
+import org.embeddedt.embeddium.api.render.chunk.SectionInfoBuilder;
+import org.embeddedt.embeddium.api.render.texture.SpriteUtil;
+import org.embeddedt.embeddium.impl.render.chunk.occlusion.ModernGraphDirection;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSection;
-import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBufferSorter;
-import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildBuffers;
-import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildContext;
-import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildOutput;
+import org.embeddedt.embeddium.impl.render.chunk.compile.*;
 import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BlockRenderCache;
-import org.embeddedt.embeddium.api.render.chunk.BlockRenderContext;
-import org.embeddedt.embeddium.impl.render.chunk.data.BuiltSectionInfo;
+import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BlockRenderContext;
+import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.GeometryCategory;
+import org.embeddedt.embeddium.impl.render.chunk.data.BuiltRenderSectionData;
 import org.embeddedt.embeddium.impl.render.chunk.data.BuiltSectionMeshParts;
-import org.embeddedt.embeddium.impl.render.chunk.terrain.DefaultTerrainRenderPasses;
+import org.embeddedt.embeddium.impl.render.chunk.data.MinecraftBuiltRenderSectionData;
+import org.embeddedt.embeddium.impl.render.chunk.occlusion.VisibilityEncoding;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
+import org.embeddedt.embeddium.impl.util.WorldUtil;
 import org.embeddedt.embeddium.impl.util.task.CancellationToken;
 import org.embeddedt.embeddium.impl.world.WorldSlice;
 import org.embeddedt.embeddium.impl.world.cloned.ChunkRenderContext;
@@ -19,25 +26,22 @@ import net.minecraft.CrashReport;
 import net.minecraft.CrashReportCategory;
 import net.minecraft.ReportedException;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.chunk.VisGraph;
-import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.model.data.ModelData;
 import org.embeddedt.embeddium.api.ChunkDataBuiltEvent;
 import org.embeddedt.embeddium.impl.chunk.MeshAppenderRenderer;
-import org.embeddedt.embeddium.impl.model.UnwrappableBakedModel;
+import org.embeddedt.embeddium.impl.model.ModelDataSnapshotter;
+import org.joml.Vector3d;
 
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * Rebuilds all the meshes of a chunk for each given render pass with non-occluded blocks. The result is then uploaded
@@ -47,30 +51,24 @@ import java.util.Objects;
  * array allocations, they are pooled to ensure that the garbage collector doesn't become overloaded.
  */
 public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> {
-
-    private final RandomSource random = new SingleThreadedRandomSource(42L);
-
     private final RenderSection render;
     private final ChunkRenderContext renderContext;
 
     private final int buildTime;
+    private final Vector3d camera;
 
-    private Vec3 camera = Vec3.ZERO;
 
-    public ChunkBuilderMeshingTask(RenderSection render, ChunkRenderContext renderContext, int time) {
+    public ChunkBuilderMeshingTask(RenderSection render, ChunkRenderContext renderContext, int time, Vector3d camera) {
         this.render = render;
         this.renderContext = renderContext;
         this.buildTime = time;
-    }
-
-    public ChunkBuilderMeshingTask withCameraPosition(Vec3 camera) {
         this.camera = camera;
-        return this;
     }
 
     @Override
-    public ChunkBuildOutput execute(ChunkBuildContext buildContext, CancellationToken cancellationToken) {
-        BuiltSectionInfo.Builder renderData = new BuiltSectionInfo.Builder();
+    public ChunkBuildOutput execute(ChunkBuildContext jobContext, CancellationToken cancellationToken) {
+        ModernChunkBuildContext buildContext = (ModernChunkBuildContext)jobContext;
+        MinecraftBuiltRenderSectionData<TextureAtlasSprite, BlockEntity> renderData = new MinecraftBuiltRenderSectionData<>();
         VisGraph occluder = new VisGraph();
 
         ChunkBuildBuffers buffers = buildContext.buffers;
@@ -95,6 +93,10 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
 
         BlockRenderContext context = new BlockRenderContext(slice);
 
+        ModelDataSnapshotter.Getter modelDataGetter = slice.getModelDataGetter(this.render.getChunkX(), this.render.getChunkY(), this.render.getChunkZ());
+
+        boolean voxelizingLight = false;
+
         try {
             for (int y = minY; y < maxY; y++) {
                 if (cancellationToken.isCancelled()) {
@@ -106,48 +108,49 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                         BlockState blockState = slice.getBlockState(x, y, z);
 
                         // Fast path - skip blocks that are air and don't have any custom logic
-                        if (blockState.isAir() && blockState.getRenderShape() == RenderShape.INVISIBLE && !blockState.hasBlockEntity()) {
+                        if (blockState.getBlock().getClass() == AirBlock.class) {
                             continue;
                         }
 
                         blockPos.set(x, y, z);
                         modelOffset.set(x & 15, y & 15, z & 15);
 
+                        if (voxelizingLight && blockState.getBlock() instanceof net.minecraft.world.level.block.LightBlock) {
+                            cache.getSpecialBlockRenderer().voxelizeLightBlock(slice, blockPos, blockState, buffers);
+                        }
+                        //?}
+
                         if (blockState.getRenderShape() == RenderShape.MODEL) {
-                            BakedModel model = cache.getBlockModels()
-                                .getBlockModel(blockState);
-                            ModelData modelData = model.getModelData(context.localSlice(), blockPos, blockState, slice.getModelData(blockPos));
-
                             long seed = blockState.getSeed(blockPos);
-                            random.setSeed(seed);
+                            context.update(GeometryCategory.BLOCK, blockPos, modelOffset, blockState, seed);
 
-                            // Embeddium: Ideally we'd do this before the call to getModelData, but that requires an
-                            // LVT reordering to move "long seed" further up. We will have to do this in 21.
-                            model = UnwrappableBakedModel.unwrapIfPossible(model, random);
+                            var vanillaModel = cache.getBlockModels().getBlockModel(blockState);
+                            var model = vanillaModel;
+                            context.model(model);
 
-                            random.setSeed(seed);
+                            var modelData = context.localSlice().getModelData(blockPos);
+                            context.setModelData(modelData);
 
-                            for (RenderType layer : model.getRenderTypes(blockState, random, modelData)) {
-                                context.update(blockPos, modelOffset, blockState, model, seed, modelData, layer);
-                                cache.getBlockRenderer()
-                                        .renderModel(context, buffers);
-                            }
+                            context.random().setSeed(seed); // for render layers
+
                         }
 
                         FluidState fluidState = blockState.getFluidState();
 
                         if (!fluidState.isEmpty()) {
-                            cache.getFluidRenderer().render(slice, fluidState, blockPos, modelOffset, buffers);
+                            context.model(null);
+                            context.update(GeometryCategory.FLUID, blockPos, modelOffset, blockState, 42L);
+                            context.renderLayer(ItemBlockRenderTypes.getRenderLayer(fluidState));
                         }
 
-                        if (blockState.hasBlockEntity()) {
+                        if (WorldUtil.hasBlockEntity(blockState)) {
                             BlockEntity entity = slice.getBlockEntity(blockPos);
 
                             if (entity != null) {
-                                BlockEntityRenderer<BlockEntity> renderer = Minecraft.getInstance().getBlockEntityRenderDispatcher().getRenderer(entity);
+                                BlockEntityRenderer<BlockEntity, BlockEntityRenderState> renderer = Minecraft.getInstance().getBlockEntityRenderDispatcher().getRenderer(entity);
 
                                 if (renderer != null) {
-                                    renderData.addBlockEntity(entity, !renderer.shouldRenderOffScreen(entity));
+                                    (renderer.shouldRenderOffScreen() ? renderData.globalBlockEntities : renderData.culledBlockEntities).add(entity);
                                 }
                             }
                         }
@@ -168,32 +171,45 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
             throw fillCrashInfo(CrashReport.forThrowable(ex, "Encountered exception while building chunk meshes"), slice, blockPos);
         }
 
-        Map<TerrainRenderPass, BuiltSectionMeshParts> meshes = new Reference2ReferenceOpenHashMap<>();
+        Reference2ReferenceMap<TerrainRenderPass, BuiltSectionMeshParts> meshes = BuiltSectionMeshParts.groupFromBuildBuffers(buffers,(float)camera.x - minX, (float)camera.y - minY, (float)camera.z - minZ);
 
-        for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
-            BuiltSectionMeshParts mesh = buffers.createMesh(pass);
-
-            if (mesh != null) {
-                if(pass.isSorted()) {
-                    Objects.requireNonNull(mesh.getIndexData());
-                    ChunkBufferSorter.sort(
-                            mesh.getIndexData(),
-                            mesh.getSortState(),
-                            (float)camera.x - minX,
-                            (float)camera.y - minY,
-                            (float)camera.z - minZ
-                    );
-                }
-                meshes.put(pass, mesh);
-                renderData.addRenderPass(pass);
-            }
+        if (!meshes.isEmpty()) {
+            renderData.hasBlockGeometry = true;
         }
 
-        renderData.setOcclusionData(occluder.resolve());
+        encodeVisibilityData(occluder, renderData);
 
-        ChunkDataBuiltEvent.BUS.post(new ChunkDataBuiltEvent(renderData));
+        postSectionDataBuiltEvent(renderData);
 
-        return new ChunkBuildOutput(this.render, renderData.build(), meshes, this.buildTime);
+        return new ChunkBuildOutput(this.render, renderData, meshes, this.buildTime);
+    }
+
+    private static void encodeVisibilityData(VisGraph occluder, BuiltRenderSectionData renderData) {
+        var data = occluder.resolve();
+        renderData.visibilityData = VisibilityEncoding.encode((from, to) -> data.visibilityBetween(ModernGraphDirection.toEnum(from), ModernGraphDirection.toEnum(to)));
+    }
+
+    private static void postSectionDataBuiltEvent(MinecraftBuiltRenderSectionData<TextureAtlasSprite, BlockEntity> renderData) {
+        ChunkDataBuiltEvent.BUS.post(new ChunkDataBuiltEvent(new SectionInfoBuilder() {
+            @Override
+            public void addSprite(TextureAtlasSprite sprite) {
+                if (!SpriteUtil.hasAnimation(sprite)) {
+                    return;
+                }
+                renderData.animatedSprites.add(sprite);
+            }
+
+            @Override
+            public void addBlockEntity(BlockEntity entity, boolean cull) {
+                (cull ? renderData.culledBlockEntities : renderData.globalBlockEntities).add(entity);
+            }
+
+            @Override
+            public void removeBlockEntitiesIf(Predicate<BlockEntity> filter) {
+                renderData.culledBlockEntities.removeIf(filter);
+                renderData.globalBlockEntities.removeIf(filter);
+            }
+        }));
     }
 
     private ReportedException fillCrashInfo(CrashReport report, WorldSlice slice, BlockPos pos) {
@@ -203,7 +219,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
         try {
             state = slice.getBlockState(pos);
         } catch (Exception ignored) {}
-        CrashReportCategory.populateBlockDetails(crashReportSection, slice, pos, state);
+        CrashReportCategory.populateBlockDetails(crashReportSection, /*? if >=1.17 {*/ slice, /*?}*/ pos, state);
 
         crashReportSection.setDetail("Chunk section", this.render);
         if (this.renderContext != null) {

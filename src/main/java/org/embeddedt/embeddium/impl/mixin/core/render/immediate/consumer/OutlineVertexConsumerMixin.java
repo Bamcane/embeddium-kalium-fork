@@ -1,6 +1,8 @@
+
 package org.embeddedt.embeddium.impl.mixin.core.render.immediate.consumer;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import org.embeddedt.embeddium.api.util.ColorABGR;
 import org.embeddedt.embeddium.api.util.ColorARGB;
 import org.embeddedt.embeddium.api.vertex.attributes.CommonVertexAttribute;
 import org.embeddedt.embeddium.api.vertex.attributes.common.ColorAttribute;
@@ -16,18 +18,19 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(targets = "net/minecraft/client/renderer/OutlineBufferSource$EntityOutlineGenerator")
-public abstract class OutlineVertexConsumerMixin implements VertexBufferWriter {
+public abstract class OutlineVertexConsumerMixin  implements VertexBufferWriter {
     @Shadow
     @Final
     private VertexConsumer delegate;
 
-    @Shadow
-    @Final
-    private int color;
     @Unique
     private boolean isFullWriter;
 
-    @Inject(method = "<init>(Lcom/mojang/blaze3d/vertex/VertexConsumer;I)V", at = @At("RETURN"))
+    @Shadow
+    @Final
+    private int color;
+
+    @Inject(method = "<init>", at = @At("RETURN"))
     private void onInit(CallbackInfo ci) {
         this.isFullWriter = VertexBufferWriter.tryOf(this.delegate) != null;
     }

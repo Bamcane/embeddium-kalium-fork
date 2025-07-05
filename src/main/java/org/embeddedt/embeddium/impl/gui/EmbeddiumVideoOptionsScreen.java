@@ -23,6 +23,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.VideoSettingsScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.renderer.texture.SimpleTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -299,18 +300,21 @@ public class EmbeddiumVideoOptionsScreen extends Screen {
     public void renderBackground(GuiGraphics gfx, int mouseX, int mouseY, float partialTick) {
         super.renderBackground(gfx, mouseX, mouseY, partialTick);
 
-        // Render watermarks
-        //gfx.setColor(ColorARGB.unpackRed(DefaultColors.ELEMENT_ACTIVATED) / 255f, ColorARGB.unpackGreen(DefaultColors.ELEMENT_ACTIVATED) / 255f, ColorARGB.unpackBlue(DefaultColors.ELEMENT_ACTIVATED) / 255f, 0.8F);
-        RenderSystem.disableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.enableBlend();
-        RenderSystem.blendFunc(770, 1);
-        gfx.blit(RenderType::guiTextured, LOGO_LOCATION, this.logoDim.x(), this.logoDim.y(), this.logoDim.width(), this.logoDim.height(), 0, 0, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE, LOGO_SIZE);
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableBlend();
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        //gfx.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+        // normalize
+        float u0 = 0.0f;
+        float u1 = (float) LOGO_SIZE / LOGO_SIZE;
+        float v0 = 0.0f;
+        float v1 = (float) LOGO_SIZE / LOGO_SIZE;
+
+        gfx.blit(
+            LOGO_LOCATION,
+            this.logoDim.x(),
+            this.logoDim.y(),
+            this.logoDim.width(),
+            this.logoDim.height(),
+            u0, u1,
+            v0, v1
+        );
     }
 
     @Override
@@ -416,14 +420,14 @@ public class EmbeddiumVideoOptionsScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_P && (modifiers & GLFW.GLFW_MOD_SHIFT) != 0 && !(this.searchTextField != null && this.searchTextField.isFocused())) {
+    public boolean keyPressed(KeyEvent Event) {
+        if (Event.hasShiftDown() && Event.key() == GLFW.GLFW_KEY_P && !(this.searchTextField != null && this.searchTextField.isFocused())) {
             Minecraft.getInstance().setScreen(new VideoSettingsScreen(this.prevScreen, Minecraft.getInstance(), Minecraft.getInstance().options));
 
             return true;
         }
 
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(Event);
     }
 
     @Override

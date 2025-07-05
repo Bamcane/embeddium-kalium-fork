@@ -7,6 +7,7 @@ import org.embeddedt.embeddium.api.options.control.CyclingControl;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.util.StringUtil;
@@ -94,8 +95,8 @@ public class SearchTextFieldModel {
         Minecraft.getInstance().schedule(() -> this.mainScreen.rebuildUI());
     }
 
-    void erase(int offset) {
-        if (Screen.hasControlDown()) {
+    void erase(KeyEvent event, int offset) {
+        if (event.hasControlDown()) {
             this.eraseWords(offset);
         } else {
             this.eraseCharacters(offset);

@@ -1,40 +1,21 @@
 package org.embeddedt.embeddium.impl.mixin.core;
 
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
-import net.minecraft.util.profiling.Profiler;
 import org.embeddedt.embeddium.impl.Embeddium;
-import org.embeddedt.embeddium.impl.gui.screen.ConfigCorruptedScreen;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.main.GameConfig;
-import net.minecraft.server.packs.resources.ReloadableResourceManager;
 import net.minecraft.util.profiling.ProfilerFiller;
-import org.embeddedt.embeddium.impl.compatibility.checks.ResourcePackScanner;
+import org.embeddedt.embeddium.impl.util.ProfilerUtil;
 import org.lwjgl.opengl.GL32C;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import java.util.concurrent.CompletableFuture;
 
 @Mixin(Minecraft.class)
 public class MinecraftClientMixin {
-    @Shadow
-    @Final
-    private ReloadableResourceManager resourceManager;
     @Unique
     private final LongArrayFIFOQueue fences = new LongArrayFIFOQueue();
-
-    @Inject(method = "<init>", at = @At("RETURN"))
-    private void postInit(GameConfig args, CallbackInfo ci) {
-        if (Embeddium.options().isReadOnly()) {
-            var parent = Minecraft.getInstance().screen;
-            Minecraft.getInstance().setScreen(new ConfigCorruptedScreen(() -> parent));
-        }
-    }
 
     /**
      * We run this at the beginning of the frame (except for the first frame) to give the previous frame plenty of time
@@ -42,7 +23,7 @@ public class MinecraftClientMixin {
      */
     @Inject(method = "runTick", at = @At("HEAD"))
     private void preRender(boolean tick, CallbackInfo ci) {
-        ProfilerFiller profiler = Profiler.get();
+        ProfilerFiller profiler = ProfilerUtil.get();
         profiler.push("wait_for_gpu");
 
         while (this.fences.size() > Embeddium.options().advanced.cpuRenderAheadLimit) {
@@ -80,22 +61,6 @@ public class MinecraftClientMixin {
         }
 
         this.fences.enqueue(fence);
-    }
-
-    /**
-     * Check for problematic core shader resource packs after the initial game launch.
-     */
-    @Inject(method = "buildInitialScreens", at = @At("TAIL"))
-    private void postInit(CallbackInfoReturnable<Runnable> cir) {
-        ResourcePackScanner.checkIfCoreShaderLoaded(this.resourceManager);
-    }
-
-    /**
-     * Check for problematic core shader resource packs after every resource reload.
-     */
-    @Inject(method = "reloadResourcePacks()Ljava/util/concurrent/CompletableFuture;", at = @At("TAIL"))
-    private void postResourceReload(CallbackInfoReturnable<CompletableFuture<Void>> cir) {
-        ResourcePackScanner.checkIfCoreShaderLoaded(this.resourceManager);
     }
 
 }

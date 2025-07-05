@@ -8,7 +8,6 @@ import org.spongepowered.asm.mixin.Shadow;
 
 import java.util.Map;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.Fluid;
 
@@ -17,12 +16,12 @@ public class RenderLayersMixin {
     @Mutable
     @Shadow
     @Final
-    private static Map<Block, RenderType> TYPE_BY_BLOCK;
+    private static Map<Block, ?> TYPE_BY_BLOCK;
 
     @Mutable
     @Shadow
     @Final
-    private static Map<Fluid, RenderType> TYPE_BY_FLUID;
+    private static Map<Fluid, ?> TYPE_BY_FLUID;
 
     static {
         // Replace the backing collection types with something a bit faster, since this is a hot spot in chunk rendering.

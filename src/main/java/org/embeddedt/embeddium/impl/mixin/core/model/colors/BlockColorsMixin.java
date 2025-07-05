@@ -22,6 +22,8 @@ public class BlockColorsMixin implements BlockColorsExtended {
     @Unique
     private final ReferenceSet<Block> overridenBlocks = new ReferenceOpenHashSet<>();
 
+
+
     @Inject(method = "register", at = @At("HEAD"))
     private void preRegisterColorProvider(BlockColor provider, Block[] blocks, CallbackInfo ci) {
         // Happens with Quark. Why??
@@ -33,7 +35,9 @@ public class BlockColorsMixin implements BlockColorsExtended {
                     // it means a mod is using custom logic and we need to disable per-vertex coloring
                     if (this.blocksToColor.put(block, provider) != null) {
                         this.overridenBlocks.add(block);
-                        Embeddium.logger().info("Block {} had its color provider replaced and will not use per-vertex coloring", BuiltInRegistries.BLOCK.getKey(block));
+                        Embeddium.logger().info("Block {} had its color provider replaced and will not use per-vertex coloring",
+                                BuiltInRegistries.BLOCK.getKey(block)
+                        );
                     }
                 }
             }
@@ -46,7 +50,7 @@ public class BlockColorsMixin implements BlockColorsExtended {
     }
 
     @Override
-    public ReferenceSet<Block> sodium$getOverridenVanillaBlocks() {
+    public ReferenceSet<Block> embeddium$getOverridenVanillaBlocks() {
         return ReferenceSets.unmodifiable(this.overridenBlocks);
     }
 }

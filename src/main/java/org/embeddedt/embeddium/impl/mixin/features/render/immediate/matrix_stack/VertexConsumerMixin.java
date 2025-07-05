@@ -2,10 +2,10 @@ package org.embeddedt.embeddium.impl.mixin.features.render.immediate.matrix_stac
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import org.embeddedt.embeddium.api.math.MatrixHelper;
 import org.joml.Math;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
+import org.embeddedt.embeddium.api.math.MatrixHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
@@ -18,10 +18,6 @@ public interface VertexConsumerMixin {
     @Shadow
     VertexConsumer addVertex(float x, float y, float z);
 
-    /**
-     * @reason Avoid allocations
-     * @author JellySquid
-     */
     @Overwrite
     default VertexConsumer addVertex(Matrix4f matrix, float x, float y, float z) {
         float xt = MatrixHelper.transformPositionX(matrix, x, y, z);
@@ -31,10 +27,6 @@ public interface VertexConsumerMixin {
         return this.addVertex(xt, yt, zt);
     }
 
-    /**
-     * @reason Avoid allocations
-     * @author JellySquid
-     */
     @Overwrite
     default VertexConsumer setNormal(PoseStack.Pose pose, float x, float y, float z) {
         final Matrix3f matrix = pose.normal();

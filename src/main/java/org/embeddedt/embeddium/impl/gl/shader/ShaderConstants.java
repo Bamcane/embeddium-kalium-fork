@@ -3,6 +3,8 @@ package org.embeddedt.embeddium.impl.gl.shader;
 import java.util.*;
 
 public class ShaderConstants {
+    public static final ShaderConstants EMPTY = ShaderConstants.builder().build();
+
     private final List<String> defines;
 
     private ShaderConstants(List<String> defines) {
@@ -26,11 +28,11 @@ public class ShaderConstants {
 
         }
 
-        public void add(String name) {
-            this.add(name, EMPTY_VALUE);
+        public ShaderConstants.Builder add(String name) {
+            return this.add(name, EMPTY_VALUE);
         }
 
-        public void add(String name, String value) {
+        public ShaderConstants.Builder add(String name, String value) {
             String prev = this.constants.get(name);
 
             if (prev != null) {
@@ -38,6 +40,7 @@ public class ShaderConstants {
             }
 
             this.constants.put(name, value);
+            return this;
         }
 
         public ShaderConstants build() {
@@ -57,10 +60,16 @@ public class ShaderConstants {
             return new ShaderConstants(Collections.unmodifiableList(defines));
         }
 
-        public void addAll(List<String> defines) {
+        public ShaderConstants.Builder addAll(Collection<String> defines) {
             for (String value : defines) {
                 this.add(value);
             }
+            return this;
+        }
+
+        public ShaderConstants.Builder addAll(Map<String, String> defines) {
+            defines.forEach(this::add);
+            return this;
         }
     }
 }

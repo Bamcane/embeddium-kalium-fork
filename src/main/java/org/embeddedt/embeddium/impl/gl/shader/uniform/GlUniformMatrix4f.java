@@ -1,6 +1,5 @@
 package org.embeddedt.embeddium.impl.gl.shader.uniform;
 
-import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.system.MemoryStack;

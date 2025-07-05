@@ -4,13 +4,14 @@ import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.ComponentPath;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
-import net.minecraft.client.gui.navigation.CommonInputs;
 import net.minecraft.client.gui.navigation.FocusNavigationEvent;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import org.embeddedt.embeddium.impl.gui.theme.DefaultColors;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Objects;
 
@@ -85,7 +86,6 @@ public class FlatButtonWidget extends AbstractWidget implements Renderable {
         this.leftAligned = leftAligned;
     }
 
-    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.enabled || !this.visible) {
             return false;
@@ -101,11 +101,11 @@ public class FlatButtonWidget extends AbstractWidget implements Renderable {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyEvent Event) {
         if (!this.isFocused())
             return false;
 
-        if (CommonInputs.selected(keyCode)) {
+        if (Event.isSelection()) {
             doAction();
             return true;
         }

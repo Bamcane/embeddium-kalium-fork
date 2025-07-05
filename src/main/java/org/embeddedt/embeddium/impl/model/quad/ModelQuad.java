@@ -2,8 +2,7 @@ package org.embeddedt.embeddium.impl.model.quad;
 
 import static org.embeddedt.embeddium.impl.util.ModelQuadUtil.*;
 
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.core.Direction;
+import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
 import org.embeddedt.embeddium.impl.util.ModelQuadUtil;
 
 /**
@@ -14,26 +13,30 @@ public class ModelQuad implements ModelQuadViewMutable {
     private final int[] data = new int[VERTEX_SIZE * 4];
     private int flags;
 
-    private TextureAtlasSprite sprite;
-    private Direction direction;
+    private int normal;
 
+    private Object sprite;
     private int colorIdx;
+    private ModelQuadFacing direction;
 
     private boolean hasAmbientOcclusion = true;
 
     @Override
     public void setX(int idx, float x) {
         this.data[vertexOffset(idx) + POSITION_INDEX] = Float.floatToRawIntBits(x);
+        this.normal = 0;
     }
 
     @Override
     public void setY(int idx, float y) {
         this.data[vertexOffset(idx) + POSITION_INDEX + 1] = Float.floatToRawIntBits(y);
+        this.normal = 0;
     }
 
     @Override
     public void setZ(int idx, float z) {
         this.data[vertexOffset(idx) + POSITION_INDEX + 2] = Float.floatToRawIntBits(z);
+        this.normal = 0;
     }
 
     @Override
@@ -62,7 +65,7 @@ public class ModelQuad implements ModelQuadViewMutable {
     }
 
     @Override
-    public void setSprite(TextureAtlasSprite sprite) {
+    public void setSprite(Object sprite) {
         this.sprite = sprite;
     }
 
@@ -72,8 +75,11 @@ public class ModelQuad implements ModelQuadViewMutable {
     }
 
     @Override
-    public void setLightFace(Direction direction) {
-        this.direction = direction;
+    public void setLightFace(ModelQuadFacing face) {
+        if (!face.isDirection()) {
+            throw new IllegalArgumentException();
+        }
+        this.direction = face;
     }
 
     @Override
@@ -127,8 +133,22 @@ public class ModelQuad implements ModelQuadViewMutable {
     }
 
     @Override
+    public void setForgeNormal(int idx, int normal) {
+        this.data[vertexOffset(idx) + NORMAL_INDEX] = normal;
+    }
+
+    @Override
     public int getComputedFaceNormal() {
-        return ModelQuadUtil.calculateNormal(this);
+        int n = this.normal;
+        if (n == 0) {
+            this.normal = n = ModelQuadUtil.calculateNormal(this);
+        }
+        return n;
+    }
+
+    @Override
+    public ModelQuadFacing getNormalFace() {
+        return ModelQuadUtil.findNormalFace(getComputedFaceNormal());
     }
 
     @Override
@@ -137,12 +157,12 @@ public class ModelQuad implements ModelQuadViewMutable {
     }
 
     @Override
-    public TextureAtlasSprite getSprite() {
+    public Object kalium$getSprite() {
         return this.sprite;
     }
 
     @Override
-    public Direction getLightFace() {
+    public ModelQuadFacing getLightFace() {
         return this.direction;
     }
 

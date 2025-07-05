@@ -31,8 +31,7 @@ package org.embeddedt.embeddium.impl.util.sorting;
 
 
 /**
- * Based upon {@link it.unimi.dsi.fastutil.ints.IntArrays} implementation, but it eliminates the use of a user-supplied
- * function and instead sorts an array of floats directly. This helps to improve runtime performance.
+ * Based upon {@link it.unimi.dsi.fastutil.ints.IntArrays} implementation.
  */
 public class MergeSort extends AbstractSort {
     private static final int INSERTION_SORT_THRESHOLD = 16;
@@ -44,7 +43,7 @@ public class MergeSort extends AbstractSort {
         return indices;
     }
 
-    private static void mergeSort(final int[] indices, final float[] keys) {
+    public static void mergeSort(final int[] indices, final float[] keys) {
         mergeSort(indices, keys, 0, indices.length, null);
     }
 

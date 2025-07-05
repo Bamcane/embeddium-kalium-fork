@@ -13,6 +13,8 @@ public interface ChunkVertexEncoder {
         public float u;
         public float v;
         public int light;
+        public int vanillaNormal;
+        public int trueNormal;
 
         public static Vertex[] uninitializedQuad() {
             Vertex[] vertices = new Vertex[4];

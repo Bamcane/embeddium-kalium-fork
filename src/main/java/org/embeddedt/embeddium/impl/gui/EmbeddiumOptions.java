@@ -7,6 +7,8 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.JsonSyntaxException;
 import org.embeddedt.embeddium.impl.Embeddium;
 import org.embeddedt.embeddium.impl.gui.options.TextProvider;
+import org.embeddedt.embeddium.impl.render.chunk.occlusion.AsyncOcclusionMode;
+
 import net.minecraft.client.GraphicsStatus;
 import net.minecraft.network.chat.Component;
 import org.embeddedt.embeddium.impl.config.ConfigMigrator;
@@ -52,7 +54,10 @@ public class EmbeddiumOptions {
         @SerializedName("use_translucent_face_sorting_v2")
         public boolean useTranslucentFaceSorting = true;
         public boolean useRenderPassOptimization = true;
+        public boolean useRenderPassConsolidation = true;
         public boolean useNoErrorGLContext = true;
+
+        public AsyncOcclusionMode asyncOcclusionMode = AsyncOcclusionMode.ONLY_SHADOW;
     }
 
     public static class AdvancedSettings {
@@ -68,6 +73,8 @@ public class EmbeddiumOptions {
         public GraphicsQuality leavesQuality = GraphicsQuality.DEFAULT;
 
         public boolean enableVignette = true;
+
+        public int chunkFadeInDuration = 0;
 
         public boolean useQuadNormalsForShading = false;
     }
@@ -95,6 +102,10 @@ public class EmbeddiumOptions {
 
         public boolean isFancy(GraphicsStatus graphicsMode) {
             return (this == FANCY) || (this == DEFAULT && (graphicsMode == GraphicsStatus.FANCY || graphicsMode == GraphicsStatus.FABULOUS));
+        }
+
+        public boolean isFancy(boolean fancyGraphics) {
+            return (this == FANCY) || (this == DEFAULT && fancyGraphics);
         }
     }
 

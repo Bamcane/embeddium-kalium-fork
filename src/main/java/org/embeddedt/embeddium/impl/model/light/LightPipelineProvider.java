@@ -3,8 +3,6 @@ package org.embeddedt.embeddium.impl.model.light;
 import org.embeddedt.embeddium.impl.model.light.data.LightDataAccess;
 import org.embeddedt.embeddium.impl.model.light.flat.FlatLightPipeline;
 import org.embeddedt.embeddium.impl.model.light.smooth.SmoothLightPipeline;
-import net.neoforged.neoforge.common.NeoForgeConfig;
-import org.embeddedt.embeddium.impl.render.chunk.light.ForgeLightPipeline;
 
 import java.util.EnumMap;
 
@@ -18,15 +16,10 @@ public class LightPipelineProvider {
     private final EnumMap<LightMode, LightPipeline> lighters = new EnumMap<>(LightMode.class);
     private final LightDataAccess lightData;
 
-    public LightPipelineProvider(LightDataAccess cache) {
+    public LightPipelineProvider(LightDataAccess cache, DiffuseProvider diffuseProvider, boolean useQuadNormalsForShading) {
         this.lightData = cache;
-        if (NeoForgeConfig.CLIENT.experimentalForgeLightPipelineEnabled.get()) {
-            this.lighters.put(LightMode.SMOOTH, ForgeLightPipeline.smooth(cache));
-            this.lighters.put(LightMode.FLAT, ForgeLightPipeline.flat(cache));
-        } else {
-            this.lighters.put(LightMode.SMOOTH, new SmoothLightPipeline(cache));
-            this.lighters.put(LightMode.FLAT, new FlatLightPipeline(cache));
-        }
+        this.lighters.put(LightMode.SMOOTH, new SmoothLightPipeline(cache, diffuseProvider, useQuadNormalsForShading));
+        this.lighters.put(LightMode.FLAT, new FlatLightPipeline(cache, diffuseProvider, useQuadNormalsForShading));
     }
 
     public LightPipeline getLighter(LightMode type) {

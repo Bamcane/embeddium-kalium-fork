@@ -17,7 +17,7 @@ public class EmptyPaletteStorageMixin implements PaletteStorageExtended {
     private int size;
 
     @Override
-    public <T> void sodium$unpack(T[] out, Palette<T> palette) {
+    public <T> void sodium$unpack(T[] out, Palette<T> palette, T defaultValue) {
         if (this.size != out.length) {
             throw new IllegalArgumentException("Array has mismatched size");
         }

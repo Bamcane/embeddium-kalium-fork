@@ -1,32 +1,24 @@
 package org.embeddedt.embeddium.impl.render.chunk.compile.executor;
 
-import net.minecraft.ReportedException;
+import java.util.Objects;
 
-public class ChunkJobResult<OUTPUT> {
-    private final OUTPUT output;
-    private final Throwable throwable;
+public sealed interface ChunkJobResult<OUTPUT> permits ChunkJobResult.Success, ChunkJobResult.Failure {
+    record Success<OUTPUT>(OUTPUT output, long executionTimeNanos) implements ChunkJobResult<OUTPUT> {
 
-    private ChunkJobResult(OUTPUT output, Throwable throwable) {
-        this.output = output;
-        this.throwable = throwable;
     }
 
-    public static <OUTPUT> ChunkJobResult<OUTPUT> exceptionally(Throwable throwable) {
-        return new ChunkJobResult<>(null, throwable);
-    }
-
-    public static <OUTPUT> ChunkJobResult<OUTPUT> successfully(OUTPUT output) {
-        return new ChunkJobResult<>(output, null);
-    }
-
-    public OUTPUT unwrap() {
-        if (this.throwable instanceof ReportedException crashException) {
-            // Propagate CrashExceptions directly to provide extra information
-            throw crashException;
-        } else if (this.throwable != null) {
-            throw new RuntimeException("Exception thrown while executing job", this.throwable);
+    record Failure<OUTPUT>(Throwable throwable) implements ChunkJobResult<OUTPUT> {
+        public Failure {
+            Objects.requireNonNull(throwable);
         }
 
-        return this.output;
+        public void abort() {
+            if (this.throwable instanceof RuntimeException crashException) {
+                // Propagate RuntimeExceptions directly to provide extra information if they are a vanilla crash exception
+                throw crashException;
+            } else {
+                throw new RuntimeException("Exception thrown while executing job", this.throwable);
+            }
+        }
     }
 }

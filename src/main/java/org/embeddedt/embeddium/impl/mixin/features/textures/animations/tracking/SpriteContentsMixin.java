@@ -19,11 +19,6 @@ public abstract class SpriteContentsMixin implements SpriteContentsExtended {
     private boolean active;
 
     @Override
-    public void sodium$setActive(boolean value) {
-        this.active = value;
-    }
-
-    @Override
     public boolean sodium$hasAnimation() {
         return this.animatedTexture != null;
     }

@@ -1,13 +1,14 @@
 package org.embeddedt.embeddium.impl.mixin.features.render.gui.font;
 
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.embeddedt.embeddium.api.util.ColorARGB;
 import org.embeddedt.embeddium.api.vertex.format.common.GlyphVertex;
 import net.minecraft.client.gui.font.glyphs.BakedGlyph;
 import org.embeddedt.embeddium.api.vertex.buffer.VertexBufferWriter;
 import org.embeddedt.embeddium.api.util.ColorABGR;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.embeddedt.embeddium.api.math.MatrixHelper;
 import org.joml.Matrix4f;
+
 import org.lwjgl.system.MemoryStack;
 import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.At;
@@ -52,10 +53,17 @@ public class GlyphRendererMixin {
      * @reason Use intrinsics
      * @author JellySquid
      */
-    @Inject(method = "render(ZFFFLorg/joml/Matrix4f;Lcom/mojang/blaze3d/vertex/VertexConsumer;IZI)V", at = @At("HEAD"), cancellable = true)
-    private void renderFast(boolean italic, float x, float y, float z, Matrix4f matrix, VertexConsumer vertexConsumer, int color, boolean applyBoldScale, int light, CallbackInfo ci) {
-        int packedColor = ColorARGB.toABGR(color);
-        if (drawFast(italic, x, y, z, matrix, vertexConsumer, packedColor, light, applyBoldScale)) {
+    @Inject(method = {
+            "render"
+    }, at = @At("HEAD"), cancellable = true)
+    private void renderFast(boolean italic, float x, float y,
+                            Matrix4f matrix, VertexConsumer vertexConsumer,
+                            float red, float green, float blue, float alpha,
+                            int light, CallbackInfo ci) {
+        int packedColor = ColorABGR.pack(red, green, blue, alpha);
+        float z = 0.0f;
+        boolean applyBoldScale = false;
+        if(drawFast(italic, x, y, z, matrix, vertexConsumer, packedColor, light, applyBoldScale)) {
             ci.cancel();
         }
     }
@@ -68,10 +76,13 @@ public class GlyphRendererMixin {
 
         float x1 = x + this.left;
         float x2 = x + this.right;
-        float h1 = y + this.up;
-        float h2 = y + this.down;
-        float w1 = italic ? 1.0F - 0.25F * this.up : 0.0F;
-        float w2 = italic ? 1.0F - 0.25F * this.down : 0.0F;
+        float shift = 0.0F;
+        float y1 = this.up - shift;
+        float y2 = this.down - shift;
+        float h1 = y + y1;
+        float h2 = y + y2;
+        float w1 = italic ? 1.0F - 0.25F * y1 : 0.0F;
+        float w2 = italic ? 1.0F - 0.25F * y2 : 0.0F;
         float boldScale = applyBoldScale ? 0.1F : 0.0F;
 
         try (MemoryStack stack = MemoryStack.stackPush()) {

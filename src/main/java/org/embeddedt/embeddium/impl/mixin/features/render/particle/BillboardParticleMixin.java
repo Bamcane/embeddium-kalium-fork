@@ -4,12 +4,18 @@ import org.embeddedt.embeddium.api.vertex.format.common.ParticleVertex;
 import org.embeddedt.embeddium.api.vertex.buffer.VertexBufferWriter;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.embeddedt.embeddium.api.util.ColorABGR;
+import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SingleQuadParticle;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.lwjgl.system.MemoryStack;
-import org.spongepowered.asm.mixin.*;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -19,6 +25,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class BillboardParticleMixin extends Particle {
     @Shadow
     public abstract float getQuadSize(float tickDelta);
+
+    @Shadow
+    protected float rCol;
+
+    @Shadow
+    protected float gCol;
+
+    @Shadow
+    protected float bCol;
+
+    @Shadow
+    protected float alpha;
 
     @Shadow
     protected abstract float getU0();
@@ -32,24 +50,19 @@ public abstract class BillboardParticleMixin extends Particle {
     @Shadow
     protected abstract float getV1();
 
-    private final Quaternionf embeddium$rotation = new Quaternionf();
-
     protected BillboardParticleMixin(ClientLevel world, double x, double y, double z) {
         super(world, x, y, z);
     }
+    private final Quaternionf embeddium$rotation = new Quaternionf();
 
-    /**
-     * @reason Avoid allocation
-     * @author JellySquid
-     */
-    @Redirect(method = "render", at = @At(value = "NEW", target = "()Lorg/joml/Quaternionf;"))
+    @Redirect(method = "render", at = @At(value = "NEW", target = "()Lorg/joml/Quaternionf;", remap = false))
     private Quaternionf useCachedQuaternion() {
         return embeddium$rotation;
     }
 
     @Inject(method = "renderRotatedQuad(Lcom/mojang/blaze3d/vertex/VertexConsumer;Lorg/joml/Quaternionf;FFFF)V", at = @At("HEAD"), cancellable = true)
-    private void renderRotatedQuadFast(VertexConsumer consumer, Quaternionf quaternion, float x, float y, float z, float tickDelta, CallbackInfo ci) {
-        var writer = VertexBufferWriter.tryOf(consumer);
+    private void renderRotatedQuadFast(VertexConsumer vertexConsumer, Quaternionf quaternion, float x, float y, float z, float tickDelta, CallbackInfo ci) {
+        var writer = VertexBufferWriter.tryOf(vertexConsumer);
 
         if (writer == null) {
             return;
@@ -70,7 +83,7 @@ public abstract class BillboardParticleMixin extends Particle {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             long buffer = stack.nmalloc(4 * ParticleVertex.STRIDE);
             long ptr = buffer;
-
+            
             writeVertex(ptr, quaternion,1.0F, -1.0F, x, y, z, maxU, maxV, color, light, size);
             ptr += ParticleVertex.STRIDE;
 
@@ -91,11 +104,13 @@ public abstract class BillboardParticleMixin extends Particle {
     @Unique
     @SuppressWarnings("UnnecessaryLocalVariable")
     private static void writeVertex(long buffer,
+                                    //? if >=1.20 {
                                     Quaternionf rotation,
+                                    //?} else
+                                    /*Quaternion rotation,*/
                                     float posX, float posY,
                                     float originX, float originY, float originZ,
                                     float u, float v, int color, int light, float size) {
-        // Quaternion q0 = new Quaternion(rotation);
         float q0x = rotation.x();
         float q0y = rotation.y();
         float q0z = rotation.z();

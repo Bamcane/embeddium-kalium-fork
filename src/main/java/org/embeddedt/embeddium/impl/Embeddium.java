@@ -1,5 +1,7 @@
 package org.embeddedt.embeddium.impl;
 
+import net.minecraft.client.GraphicsStatus;
+import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
@@ -32,14 +34,6 @@ public class Embeddium {
         var modContainer = ModList.get().getModContainerById(MODID).orElseThrow();
         MOD_VERSION = modContainer.getModInfo().getVersion().toString();
         modContainer.registerExtensionPoint(IConfigScreenFactory.class, (mc, screen) -> new EmbeddiumVideoOptionsScreen(screen, EmbeddiumVideoOptionsScreen.makePages()));
-
-        if("true".equals(System.getProperty("embeddium.enableGameTest"))) {
-            try {
-                modEventBus.register(Class.forName("org.embeddedt.embeddium.impl.gametest.content.TestRegistry"));
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-        }
 
         try {
             updateFingerprint();
@@ -137,5 +131,9 @@ public class Embeddium {
 
     public static boolean canApplyTranslucencySorting() {
         return Embeddium.options().performance.useTranslucentFaceSorting && !ShaderModBridge.isNvidiumEnabled();
+    }
+
+    public static boolean areGraphicsFancy() {
+        return Minecraft.getInstance().options.graphicsMode().get() != GraphicsStatus.FAST;
     }
 }

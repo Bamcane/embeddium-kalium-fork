@@ -1,14 +1,21 @@
 package org.embeddedt.embeddium.impl.world;
 
 import it.unimi.dsi.fastutil.ints.Int2ReferenceMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectFunction;
+import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
+import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
+import net.neoforged.neoforge.model.data.ModelData;
 import org.embeddedt.embeddium.api.render.chunk.EmbeddiumBlockAndTintGetter;
-import org.embeddedt.embeddium.impl.world.biome.*;
+import org.embeddedt.embeddium.impl.Embeddium;
+import org.embeddedt.embeddium.impl.model.ModelDataSnapshotter;
+import org.embeddedt.embeddium.impl.util.MathUtil;
+import org.embeddedt.embeddium.impl.render.EmbeddiumWorldRenderer;
+import org.embeddedt.embeddium.impl.util.PositionUtil;
+import org.embeddedt.embeddium.impl.util.WorldUtil;
+import org.embeddedt.embeddium.impl.world.biome.BiomeColorCache;
+import org.embeddedt.embeddium.impl.world.biome.BiomeSlice;
 import org.embeddedt.embeddium.impl.world.cloned.ChunkRenderContext;
 import org.embeddedt.embeddium.impl.world.cloned.ClonedChunkSection;
 import org.embeddedt.embeddium.impl.world.cloned.ClonedChunkSectionCache;
-import net.fabricmc.fabric.api.blockview.v2.FabricBlockView;
-import net.fabricmc.fabric.api.rendering.data.v1.RenderAttachedBlockView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -16,7 +23,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.ColorResolver;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
@@ -30,8 +37,6 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.material.FluidState;
-import net.neoforged.neoforge.client.model.data.ModelData;
-import net.neoforged.neoforge.common.world.AuxiliaryLightManager;
 import org.embeddedt.embeddium.api.ChunkMeshEvent;
 import org.embeddedt.embeddium.api.MeshAppender;
 import org.embeddedt.embeddium.impl.asm.OptionalInterface;
@@ -40,6 +45,10 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * <p>Takes a slice of world state (block states, biome and light data arrays) and copies the data for use in off-thread
@@ -51,18 +60,18 @@ import java.util.Objects;
  *
  * <p>Object pooling should be used to avoid huge allocations as this class contains many large arrays.</p>
  */
-@OptionalInterface({ FabricBlockView.class, RenderAttachedBlockView.class })
-public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView, RenderAttachedBlockView {
+public class WorldSlice implements EmbeddiumBlockAndTintGetter {
     private static final LightLayer[] LIGHT_TYPES = LightLayer.values();
 
     // The number of blocks in a section.
     private static final int SECTION_BLOCK_COUNT = 16 * 16 * 16;
 
     // The radius of blocks around the origin chunk that should be copied.
-    private static final int NEIGHBOR_BLOCK_RADIUS = 2;
+    // This should be at least 16 for parity with 1.18 and newer.
+    private static final int NEIGHBOR_BLOCK_RADIUS = 16;
 
     // The radius of chunks around the origin chunk that should be copied.
-    private static final int NEIGHBOR_CHUNK_RADIUS = Mth.roundToward(NEIGHBOR_BLOCK_RADIUS, 16) >> 4;
+    private static final int NEIGHBOR_CHUNK_RADIUS = MathUtil.roundToward(NEIGHBOR_BLOCK_RADIUS, 16) >> 4;
 
     // The number of sections on each axis of this slice.
     private static final int SECTION_ARRAY_LENGTH = 1 + (NEIGHBOR_CHUNK_RADIUS * 2);
@@ -101,29 +110,26 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
     private final @Nullable Int2ReferenceMap<Object>[] blockEntityRenderDataArrays;
 
     // (Local Section -> Model Data) table.
-    private final @Nullable Long2ObjectFunction<ModelData>[] modelDataArrays;
-
-    // (Local Section -> Aux Light) table.
-    private final @Nullable AuxiliaryLightManager[] auxLightArrays;
+    private final ModelDataSnapshotter.Getter[] modelDataGetters;
 
     // The starting point from which this slice captures blocks
     private int originX, originY, originZ;
     
-    // The volume that this WorldSlice contains
-    private BoundingBox volume;
-
-    // Flag to make model data lookups fast if none of the sections in the slice have it
-    private boolean hasModelData;
+    // A fallback BlockPos object to use when retrieving data from the level directly
+    private final BlockPos.MutableBlockPos fallbackPos = new BlockPos.MutableBlockPos();
+    
+    // Extra cloned chunk sections that the slice needed
+    private final Long2ReferenceMap<ClonedChunkSection> extraClonedSections = new Long2ReferenceOpenHashMap<>();
 
     public static ChunkRenderContext prepare(Level world, SectionPos origin, ClonedChunkSectionCache sectionCache) {
         LevelChunk chunk = world.getChunk(origin.getX(), origin.getZ());
-        LevelChunkSection section = chunk.getSections()[world.getSectionIndexFromSectionY(origin.getY())];
+        LevelChunkSection section = chunk.getSections()[WorldUtil.getSectionIndexFromSectionY(world, origin.getY())];
 
         // If the chunk section is absent or empty, simply terminate now. There will never be anything in this chunk
         // section to render, so we need to signal that a chunk render task shouldn't created. This saves a considerable
         // amount of time in queueing instant build tasks and greatly accelerates how quickly the world can be loaded.
         List<MeshAppender> meshAppenders = ChunkMeshEvent.post(world, origin);
-        boolean isEmpty = (section == null || section.hasOnlyAir()) && meshAppenders.isEmpty();
+        boolean isEmpty = WorldUtil.isSectionEmpty(section) && meshAppenders.isEmpty();
 
         if (isEmpty) {
             return null;
@@ -165,14 +171,19 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
 
         this.blockArrays = new BlockState[SECTION_ARRAY_SIZE][SECTION_BLOCK_COUNT];
         this.lightArrays = new DataLayer[SECTION_ARRAY_SIZE][LIGHT_TYPES.length];
-        this.auxLightArrays = new AuxiliaryLightManager[SECTION_ARRAY_SIZE];
 
         this.blockEntityArrays = new Int2ReferenceMap[SECTION_ARRAY_SIZE];
         this.blockEntityRenderDataArrays = new Int2ReferenceMap[SECTION_ARRAY_SIZE];
-        this.modelDataArrays = new Long2ObjectFunction[SECTION_ARRAY_SIZE];
+        this.modelDataGetters = new ModelDataSnapshotter.Getter[SECTION_ARRAY_SIZE];
 
         this.biomeSlice = new BiomeSlice();
-        this.biomeColors = new BiomeColorCache(this.biomeSlice, Minecraft.getInstance().options.biomeBlendRadius().get());
+        this.biomeColors = new BiomeColorCache(this.biomeSlice,
+                //? if >=1.19 {
+                Minecraft.getInstance().options.biomeBlendRadius().get()
+                //?} else
+                /*Minecraft.getInstance().options.biomeBlendRadius*/
+        );
+
 
         for (BlockState[] blockArray : this.blockArrays) {
             Arrays.fill(blockArray, EMPTY_BLOCK_STATE);
@@ -183,9 +194,6 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
         this.originX = (context.getOrigin().getX() - NEIGHBOR_CHUNK_RADIUS) << 4;
         this.originY = (context.getOrigin().getY() - NEIGHBOR_CHUNK_RADIUS) << 4;
         this.originZ = (context.getOrigin().getZ() - NEIGHBOR_CHUNK_RADIUS) << 4;
-        this.volume = context.getVolume();
-
-        this.hasModelData = false;
 
         for (int x = 0; x < SECTION_ARRAY_LENGTH; x++) {
             for (int y = 0; y < SECTION_ARRAY_LENGTH; y++) {
@@ -215,12 +223,7 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
 
         this.blockEntityArrays[sectionIndex] = section.getBlockEntityMap();
         this.blockEntityRenderDataArrays[sectionIndex] = section.getBlockEntityRenderDataMap();
-
-        this.modelDataArrays[sectionIndex] = section.getModelDataMap();
-        if(this.modelDataArrays[sectionIndex] != null) {
-            this.hasModelData = true;
-        }
-        this.auxLightArrays[sectionIndex] = section.getAuxLightManager();
+        this.modelDataGetters[sectionIndex] = section.getModelDataGetter();
     }
 
     private void unpackBlockData(BlockState[] blockArray, ChunkRenderContext context, ClonedChunkSection section) {
@@ -231,26 +234,7 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
 
         var container = ReadableContainerExtended.of(section.getBlockData());
 
-        SectionPos origin = context.getOrigin();
-        SectionPos pos = section.getPosition();
-
-        if (origin.equals(pos))  {
-            container.sodium$unpack(blockArray);
-        } else {
-            var bounds = context.getVolume();
-
-            int minBlockX = Math.max(bounds.minX(), pos.minBlockX());
-            int maxBlockX = Math.min(bounds.maxX(), pos.maxBlockX());
-
-            int minBlockY = Math.max(bounds.minY(), pos.minBlockY());
-            int maxBlockY = Math.min(bounds.maxY(), pos.maxBlockY());
-
-            int minBlockZ = Math.max(bounds.minZ(), pos.minBlockZ());
-            int maxBlockZ = Math.min(bounds.maxZ(), pos.maxBlockZ());
-
-            container.sodium$unpack(blockArray, minBlockX & 15, minBlockY & 15, minBlockZ & 15,
-                    maxBlockX & 15, maxBlockY & 15, maxBlockZ & 15);
-        }
+        container.sodium$unpack(blockArray);
     }
 
     public void reset() {
@@ -261,8 +245,9 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
             Arrays.fill(this.lightArrays[sectionIndex], null);
 
             this.blockEntityArrays[sectionIndex] = null;
-            this.modelDataArrays[sectionIndex] = null;
         }
+
+        this.extraClonedSections.clear();
     }
 
     @Override
@@ -276,7 +261,7 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
         int relZ = z - this.originZ;
 
         if (!isInside(relX, relY, relZ)) {
-            return EMPTY_BLOCK_STATE;
+            return this.getBlockStateFallback(x, y, z);
         }
 
         return this.blockArrays[getLocalSectionIndex(relX >> 4, relY >> 4, relZ >> 4)]
@@ -289,21 +274,20 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
                 .getFluidState();
     }
 
+    //? if >=1.16 {
     @Override
     public float getShade(Direction direction, boolean shaded) {
         return this.world.getShade(direction, shaded);
     }
+    //?}
 
-    @Override
-    public float getShade(float normalX, float normalY, float normalZ, boolean shade) {
-        return this.world.getShade(normalX, normalY, normalZ, shade);
-    }
-
+    //? if >=1.15 {
     @Override
     public LevelLightEngine getLightEngine() {
         // Not thread-safe to access lighting data from off-thread, even if Minecraft allows it.
         throw new UnsupportedOperationException();
     }
+    //?}
 
     @Override
     public int getBrightness(LightLayer type, BlockPos pos) {
@@ -326,7 +310,7 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
     }
 
     @Override
-    public int getRawBrightness(BlockPos pos, int ambientDarkness) {
+    public int /*? if >=1.15 {*/ getRawBrightness /*?} else {*/ /*getLightColor *//*?}*/ (BlockPos pos, int ambientDarkness) {
         int relX = pos.getX() - this.originX;
         int relY = pos.getY() - this.originY;
         int relZ = pos.getZ() - this.originZ;
@@ -390,13 +374,6 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
 
     @Override
     public ModelData getModelData(BlockPos pos) {
-        // Short-circuit immediately if we don't have model data arrays for any section. This method is called
-        // for every single block being rendered, so it's worth making it as fast as possible to minimize
-        // the speed penalty compared to vanilla.
-        if (!this.hasModelData) {
-            return ModelData.EMPTY;
-        }
-
         int relX = pos.getX() - this.originX;
         int relY = pos.getY() - this.originY;
         int relZ = pos.getZ() - this.originZ;
@@ -405,35 +382,30 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
             return ModelData.EMPTY;
         }
 
-        var modelData = this.modelDataArrays[getLocalSectionIndex(relX >> 4, relY >> 4, relZ >> 4)];
+        var modelDataGetter = this.modelDataGetters[getLocalSectionIndex(relX >> 4, relY >> 4, relZ >> 4)];
 
-        if (modelData == null) {
-            return ModelData.EMPTY;
+        return modelDataGetter.getModelData(pos);
+    }
+
+    public ModelDataSnapshotter.Getter getModelDataGetter(int chunkX, int chunkY, int chunkZ) {
+        int relSX = chunkX - (this.originX >> 4);
+        int relSY = chunkY - (this.originY >> 4);
+        int relSZ = chunkZ - (this.originZ >> 4);
+
+        if (relSX < 0 || relSY < 0 || relSZ < 0
+                || relSX >= SECTION_ARRAY_LENGTH || relSY >= SECTION_ARRAY_LENGTH || relSZ >= SECTION_ARRAY_LENGTH) {
+            throw new IllegalStateException("Requesting model data for out-of-range chunk");
         }
 
-        return modelData.get(pos.asLong());
+        return this.modelDataGetters[getLocalSectionIndex(relSX, relSY, relSZ)];
     }
 
     @Override
-    public @Nullable AuxiliaryLightManager getAuxLightManager(ChunkPos pos) {
-        if (pos.x < (this.volume.minX() >> 4) || pos.x > (this.volume.maxX() >> 4) || pos.z < (this.volume.minZ() >> 4) || pos.z > (this.volume.maxZ() >> 4)) {
-            return null;
-        }
-        return this.auxLightArrays[getLocalSectionIndex(pos.x - (this.originX >> 4), 0, pos.z - (this.originZ >> 4))];
+    public float getShade(float normalX, float normalY, float normalZ, boolean shade) {
+        return this.world.getShade(normalX, normalY, normalZ, shade);
     }
 
-    @Override
-    public Holder<Biome> getBiomeFabric(BlockPos pos) {
-        return this.biomeSlice.getBiome(pos.getX(), pos.getY(), pos.getZ());
-    }
-
-    @Override
-    public boolean hasBiomes() {
-        return true;
-    }
-
-    @Override
-    public Object getBlockEntityRenderData(BlockPos pos) {
+    private Object getBlockEntityAttachment(BlockPos pos) {
         int relX = pos.getX() - this.originX;
         int relY = pos.getY() - this.originY;
         int relZ = pos.getZ() - this.originZ;
@@ -449,6 +421,60 @@ public class WorldSlice implements EmbeddiumBlockAndTintGetter, FabricBlockView,
         }
 
         return blockEntityRenderDataMap.get(getLocalBlockIndex(relX & 15, relY & 15, relZ & 15));
+    }
+
+    @Nullable
+    private ClonedChunkSection fetchFallbackSectionForPos(int x, int y, int z) {
+        int sX = PositionUtil.posToSectionCoord(x);
+        int sY = PositionUtil.posToSectionCoord(y);
+        int sZ = PositionUtil.posToSectionCoord(z);
+        long key = PositionUtil.packSection(sX, sY, sZ);
+        var section = this.extraClonedSections.get(key);
+        if (section != null) {
+            return section;
+        }
+        var renderer = EmbeddiumWorldRenderer.instanceNullable();
+        if (renderer == null) {
+            return null;
+        }
+        var manager = renderer.getRenderSectionManager();
+        if (manager == null) {
+            return null;
+        }
+        var sectionFuture = CompletableFuture.supplyAsync(() -> {
+            return manager.getSectionCache().acquire(sX, sY, sZ);
+        }, manager::scheduleAsyncTask);
+        // The game will discard the future if the player disconnects, so we need to check that they are still connected.
+        while (Minecraft.getInstance().level == this.world) {
+            try {
+                section = sectionFuture.get(500, TimeUnit.MILLISECONDS);
+                break;
+            } catch (ExecutionException e) {
+                throw new RuntimeException("Failed to fetch fallback section", e);
+            } catch (InterruptedException | TimeoutException ignored) {
+            }
+        }
+        if (section != null) {
+            this.extraClonedSections.put(key, section);
+        }
+        return section;
+    }
+
+    /**
+     * Read the block state off the main thread (safely) by cloning the needed section.
+     */
+    private BlockState getBlockStateFallback(int x, int y, int z) {
+        if (Minecraft.getInstance().isSameThread()) {
+            this.fallbackPos.set(x, y, z);
+            return this.world.getBlockState(this.fallbackPos);
+        } else {
+            ClonedChunkSection sectionSnapshot = this.fetchFallbackSectionForPos(x, y, z);
+            if (sectionSnapshot != null) {
+                return sectionSnapshot.getBlockState(x & 15, y & 15, z & 15);
+            } else {
+                return EMPTY_BLOCK_STATE;
+            }
+        }
     }
 
     public static int getLocalBlockIndex(int x, int y, int z) {

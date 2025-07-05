@@ -1,9 +1,10 @@
 package org.embeddedt.embeddium.api;
 
-import org.embeddedt.embeddium.api.render.chunk.BlockRenderContext;
+import org.embeddedt.embeddium.impl.render.chunk.compile.pipeline.BlockRenderContext;
 import net.minecraft.util.RandomSource;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -72,6 +73,6 @@ public class BlockRendererRegistry {
          * @param random the RNG used for rendering
          * @return the result of the rendering
          */
-        RenderResult renderBlock(BlockRenderContext ctx, RandomSource random, VertexConsumer consumer);
+        RenderResult renderBlock(BlockRenderContext ctx, /*$ rng >>*/ RandomSource random, VertexConsumer consumer);
     }
 }

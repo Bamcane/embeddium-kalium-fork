@@ -1,19 +1,21 @@
 package org.embeddedt.embeddium.impl.render.chunk.region;
 
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Reference2ReferenceMap;
-import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
-import org.embeddedt.embeddium.impl.Embeddium;
+import it.unimi.dsi.fastutil.objects.*;
 import org.embeddedt.embeddium.impl.gl.arena.PendingUpload;
 import org.embeddedt.embeddium.impl.gl.arena.staging.FallbackStagingBuffer;
 import org.embeddedt.embeddium.impl.gl.arena.staging.MappedStagingBuffer;
 import org.embeddedt.embeddium.impl.gl.arena.staging.StagingBuffer;
+import org.embeddedt.embeddium.impl.gl.attribute.GlVertexFormat;
 import org.embeddedt.embeddium.impl.gl.device.CommandList;
 import org.embeddedt.embeddium.impl.gl.device.RenderDevice;
+import org.embeddedt.embeddium.impl.render.chunk.RenderPassConfiguration;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSection;
 import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildOutput;
+import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkSortOutput;
+import org.embeddedt.embeddium.impl.render.chunk.compile.ChunkTaskOutput;
+import org.embeddedt.embeddium.impl.render.chunk.compile.executor.ChunkJobResult;
 import org.embeddedt.embeddium.impl.render.chunk.data.BuiltSectionMeshParts;
-import org.embeddedt.embeddium.impl.render.chunk.terrain.DefaultTerrainRenderPasses;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
 import org.jetbrains.annotations.NotNull;
 
@@ -21,11 +23,16 @@ import java.util.*;
 
 public class RenderRegionManager {
     private final Long2ReferenceOpenHashMap<RenderRegion> regions = new Long2ReferenceOpenHashMap<>();
+    private final BitSet regionIds = new BitSet();
+    private int nextFreeId = 0;
 
     private final StagingBuffer stagingBuffer;
 
-    public RenderRegionManager(CommandList commandList) {
+    private final RenderPassConfiguration<?> renderPassConfiguration;
+
+    public RenderRegionManager(CommandList commandList, RenderPassConfiguration<?> renderPassConfiguration) {
         this.stagingBuffer = createStagingBuffer(commandList);
+        this.renderPassConfiguration = renderPassConfiguration;
     }
 
     public void update() {
@@ -43,76 +50,65 @@ public class RenderRegionManager {
                     region.delete(commandList);
 
                     it.remove();
+
+                    this.regionIds.clear(region.getId());
+                    this.nextFreeId = Math.min(this.nextFreeId, region.getId());
                 }
             }
         }
     }
 
-    public void uploadMeshes(CommandList commandList, Collection<ChunkBuildOutput> results) {
+    public void uploadMeshes(CommandList commandList, Collection<ChunkJobResult.Success<? extends ChunkTaskOutput>> results, Runnable graphUpdateTrigger) {
         for (var entry : this.createMeshUploadQueues(results)) {
-            this.uploadMeshes(commandList, entry.getKey(), entry.getValue().stream().filter(o -> !o.isIndexOnlyUpload()).toList());
-            this.uploadResorts(commandList, entry.getKey(), entry.getValue().stream().filter(ChunkBuildOutput::isIndexOnlyUpload).toList());
+            new MeshUploader(commandList, entry.getKey(), graphUpdateTrigger).processResults(entry.getValue());
         }
     }
 
-    private void uploadMeshes(CommandList commandList, RenderRegion region, Collection<ChunkBuildOutput> results) {
-        var uploads = new ArrayList<PendingSectionUpload>();
+    /* Copied from fastutil 8 as we don't have access to it when limited to fastutil 7 */
+    private static <K, V> ObjectIterable<Reference2ReferenceMap.Entry<K, V>> fastIterable(Reference2ReferenceMap<K, V> map) {
+        final ObjectSet<Reference2ReferenceMap.Entry<K, V>> entries = map.reference2ReferenceEntrySet();
+        return entries instanceof Reference2ReferenceMap.FastEntrySet ? () -> ((Reference2ReferenceMap.FastEntrySet<K, V>)entries).fastIterator() : entries;
+    }
 
-        for (ChunkBuildOutput result : results) {
-            for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
-                var storage = region.getStorage(pass);
+    private class MeshUploader {
+        private final Map<GlVertexFormat, ArrayList<PendingSectionUpload>> uploadsByFormat = new Object2ObjectOpenHashMap<>(2);
+        private final CommandList commandList;
+        private final RenderRegion region;
+        private final Runnable graphUpdateTrigger;
 
-                if (storage != null) {
-                    storage.removeMeshes(result.render.getSectionIndex());
-                }
+        private boolean needIndexBuffer;
 
-                BuiltSectionMeshParts mesh = result.getMesh(pass);
+        private MeshUploader(CommandList commandList, RenderRegion region, Runnable graphUpdateTrigger) {
+            this.commandList = commandList;
+            this.region = region;
+            this.graphUpdateTrigger = graphUpdateTrigger;
+        }
 
-                if (mesh != null) {
-                    uploads.add(new PendingSectionUpload(result.render, mesh, pass,
-                            new PendingUpload(mesh.getVertexData()), mesh.getIndexData() != null ? new PendingUpload(mesh.getIndexData()) : null));
-                }
+        private ArrayList<PendingSectionUpload> getUploadQueue(TerrainRenderPass pass) {
+            return uploadsByFormat.computeIfAbsent(pass.vertexType().getVertexFormat(), $ -> new ArrayList<>());
+        }
+
+        private void processBuildResult(ChunkBuildOutput result) {
+            // Delete all existing data for the section in the region
+            region.removeMeshes(result.render.getSectionIndex());
+
+            // Add uploads for any new data
+            for (var entry : fastIterable(result.meshes)) {
+                BuiltSectionMeshParts mesh = Objects.requireNonNull(entry.getValue());
+
+                needIndexBuffer |= mesh.indexBuffer() != null;
+
+                getUploadQueue(entry.getKey()).add(new PendingMeshRebuildUpload(result.render, mesh, entry.getKey(),
+                        PendingUpload.of(mesh.vertexBuffer()), PendingUpload.of(mesh.indexBuffer())));
             }
         }
 
-        // If we have nothing to upload, abort!
-        if (uploads.isEmpty()) {
-            return;
-        }
+        private void processSortResult(ChunkSortOutput result) {
+            needIndexBuffer = true;
 
-        var resources = region.createResources(commandList);
-        var geometryArena = resources.getGeometryArena();
-
-        boolean bufferChanged = geometryArena.upload(commandList, uploads.stream()
-                .map(upload -> upload.vertexUpload));
-
-        bufferChanged |= resources.getIndexArena().upload(commandList, uploads.stream()
-                .map(upload -> upload.indexUpload).filter(Objects::nonNull));
-
-        // If any of the buffers changed, the tessellation will need to be updated
-        // Once invalidated the tessellation will be re-created on the next attempted use
-        if (bufferChanged) {
-            region.refresh(commandList);
-        }
-
-        // Collect the upload results
-        for (PendingSectionUpload upload : uploads) {
-            var storage = region.createStorage(upload.pass);
-            storage.setMeshes(upload.section.getSectionIndex(),
-                    upload.vertexUpload.getResult(), upload.indexUpload != null ? upload.indexUpload.getResult() : null, upload.meshData.getVertexRanges());
-        }
-    }
-
-    private void uploadResorts(CommandList commandList, RenderRegion region, Collection<ChunkBuildOutput> results) {
-        var uploads = new ArrayList<PendingResortUpload>();
-
-        for (ChunkBuildOutput result : results) {
-            for (TerrainRenderPass pass : DefaultTerrainRenderPasses.ALL) {
-                BuiltSectionMeshParts mesh = result.getMesh(pass);
-
-                if(mesh == null) {
-                    continue;
-                }
+            for (var entry : fastIterable(result.meshes)) {
+                var pass = entry.getKey();
+                var mesh = entry.getValue();
 
                 var storage = region.getStorage(pass);
 
@@ -120,39 +116,82 @@ public class RenderRegionManager {
                     storage.removeIndexBuffer(result.render.getSectionIndex());
                 }
 
-                Objects.requireNonNull(mesh.getIndexData());
-
-                uploads.add(new PendingResortUpload(result.render, mesh, pass, new PendingUpload(mesh.getIndexData())));
+                getUploadQueue(entry.getKey()).add(new PendingMeshSortUpload(result.render, pass, PendingUpload.of(mesh.indexData())));
             }
         }
 
-        // If we have nothing to upload, abort!
-        if (uploads.isEmpty()) {
-            return;
-        }
+        public void processResults(Collection<? extends ChunkTaskOutput> results) {
+            for (ChunkTaskOutput output : results) {
+                if (output instanceof ChunkBuildOutput result) {
+                    processBuildResult(result);
+                } else if (output instanceof ChunkSortOutput result) {
+                    processSortResult(result);
+                } else {
+                    throw new IllegalStateException("Unexpected result type: " + output.getClass().getName());
+                }
+            }
 
-        var resources = region.createResources(commandList);
+            // If we have nothing to upload, abort!
+            if (uploadsByFormat.isEmpty()) {
+                return;
+            }
 
-        boolean bufferChanged = resources.getIndexArena().upload(commandList, uploads.stream()
-                .map(upload -> upload.indexUpload).filter(Objects::nonNull));
+            boolean bufferChanged = false;
 
-        // If any of the buffers changed, the tessellation will need to be updated
-        // Once invalidated the tessellation will be re-created on the next attempted use
-        if (bufferChanged) {
-            region.refresh(commandList);
-        }
+            for (var entry : uploadsByFormat.entrySet()) {
+                var resources = region.createResources(entry.getKey(), commandList);
+                var uploads = entry.getValue();
+                var geometryArena = resources.getGeometryArena();
 
-        // Collect the upload results
-        for (PendingResortUpload upload : uploads) {
-            var storage = region.createStorage(upload.pass);
-            storage.replaceIndexBuffer(upload.section.getSectionIndex(), upload.indexUpload.getResult());
+                bufferChanged |= geometryArena.upload(commandList, uploads.stream()
+                        .map(PendingSectionUpload::vertexUpload).filter(Objects::nonNull));
+
+                if (needIndexBuffer) {
+                    bufferChanged |= resources.getOrCreateIndexArena(commandList).upload(commandList, uploads.stream()
+                            .map(PendingSectionUpload::indexUpload).filter(Objects::nonNull));
+                }
+            }
+
+
+            // If any of the buffers changed, the tessellation will need to be updated
+            // Once invalidated the tessellation will be re-created on the next attempted use
+            if (bufferChanged) {
+                region.refresh(commandList);
+            }
+
+            int previousPassCookie = region.getPassSetUpdateCount();
+
+            // Collect the upload results
+            for (var uploads : uploadsByFormat.values()) {
+                for (PendingSectionUpload upload : uploads) {
+                    var storage = region.createStorage(upload.pass(), renderPassConfiguration);
+                    if (upload instanceof PendingMeshRebuildUpload meshUpload) {
+                        // Replace meshes
+                        var indexResult = upload.indexUpload() != null ? upload.indexUpload().getResult() : null;
+                        storage.setMeshes(upload.section().getSectionIndex(),
+                                upload.vertexUpload().getResult(), indexResult, meshUpload.meshData().ranges());
+                    } else if (upload instanceof PendingMeshSortUpload) {
+                        // Replace index buffer
+                        storage.replaceIndexBuffer(upload.section().getSectionIndex(), upload.indexUpload().getResult());
+                    } else {
+                        throw new IllegalStateException();
+                    }
+                }
+            }
+
+            region.removeEmptyStorages();
+
+            if (region.getPassSetUpdateCount() != previousPassCookie) {
+                graphUpdateTrigger.run();
+            }
         }
     }
 
-    private Reference2ReferenceMap.FastEntrySet<RenderRegion, List<ChunkBuildOutput>> createMeshUploadQueues(Collection<ChunkBuildOutput> results) {
-        var map = new Reference2ReferenceOpenHashMap<RenderRegion, List<ChunkBuildOutput>>();
+    private Reference2ReferenceMap.FastEntrySet<RenderRegion, List<ChunkTaskOutput>> createMeshUploadQueues(Collection<ChunkJobResult.Success<? extends ChunkTaskOutput>> results) {
+        var map = new Reference2ReferenceOpenHashMap<RenderRegion, List<ChunkTaskOutput>>();
 
-        for (var result : results) {
+        for (var holder : results) {
+            var result = holder.output();
             var queue = map.computeIfAbsent(result.render.getRegion(), k -> new ArrayList<>());
             queue.add(result);
         }
@@ -183,31 +222,49 @@ public class RenderRegionManager {
                 chunkZ >> RenderRegion.REGION_LENGTH_SH);
     }
 
+    private int getNextId() {
+        int id = this.nextFreeId;
+        this.nextFreeId = this.regionIds.nextClearBit(id + 1);
+        this.regionIds.set(id);
+        return id;
+    }
+
     @NotNull
     private RenderRegion create(int x, int y, int z) {
         var key = RenderRegion.key(x, y, z);
         var instance = this.regions.get(key);
 
         if (instance == null) {
-            this.regions.put(key, instance = new RenderRegion(x, y, z, this.stagingBuffer));
+            this.regions.put(key, instance = new RenderRegion(x, y, z, this.getNextId(), this.stagingBuffer));
         }
 
         return instance;
     }
 
-    private record PendingSectionUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload vertexUpload, PendingUpload indexUpload) {
-        private PendingSectionUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload vertexUpload) {
-            this(section, meshData, pass, vertexUpload, null);
-        }
+    public int getRegionIdsLength() {
+        return this.regionIds.length();
     }
 
-    private record PendingResortUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass, PendingUpload indexUpload) {
+    private interface PendingSectionUpload {
+        RenderSection section();
+        TerrainRenderPass pass();
+        PendingUpload vertexUpload();
+        PendingUpload indexUpload();
+    }
 
+    private record PendingMeshRebuildUpload(RenderSection section, BuiltSectionMeshParts meshData, TerrainRenderPass pass,
+                                            PendingUpload vertexUpload, PendingUpload indexUpload) implements PendingSectionUpload {}
+
+    private record PendingMeshSortUpload(RenderSection section, TerrainRenderPass pass, PendingUpload indexUpload) implements PendingSectionUpload {
+        @Override
+        public PendingUpload vertexUpload() {
+            return null;
+        }
     }
 
 
     private static StagingBuffer createStagingBuffer(CommandList commandList) {
-        if (Embeddium.options().advanced.useAdvancedStagingBuffers && MappedStagingBuffer.isSupported(RenderDevice.INSTANCE)) {
+        if (MappedStagingBuffer.isSupported(RenderDevice.INSTANCE)) {
             return new MappedStagingBuffer(commandList);
         }
 

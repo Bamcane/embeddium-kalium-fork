@@ -1,58 +1,43 @@
 package org.embeddedt.embeddium.impl.render.chunk;
 
 import lombok.Getter;
-import org.embeddedt.embeddium.impl.render.chunk.data.BuiltSectionInfo;
-import org.embeddedt.embeddium.impl.render.chunk.occlusion.GraphDirection;
-import org.embeddedt.embeddium.impl.render.chunk.occlusion.GraphDirectionSet;
+import lombok.Setter;
+import org.embeddedt.embeddium.impl.render.chunk.data.BuiltRenderSectionData;
+import org.embeddedt.embeddium.impl.render.chunk.lists.RenderVisualsService;
 import org.embeddedt.embeddium.impl.render.chunk.occlusion.VisibilityEncoding;
 import org.embeddedt.embeddium.impl.render.chunk.region.RenderRegion;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.TerrainRenderPass;
 import org.embeddedt.embeddium.impl.util.task.CancellationToken;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.SectionPos;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import org.embeddedt.embeddium.impl.render.chunk.sorting.TranslucentQuadAnalyzer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The render state object for a chunk section. This contains all the graphics state for each render pass along with
  * data about the render in the chunk visibility graph.
  */
-public class RenderSection {
+public class RenderSection extends AbstractSection {
     // Render Region State
     private final RenderRegion region;
-    private final int sectionIndex;
 
-    // Chunk Section State
-    private final int chunkX, chunkY, chunkZ;
+    // We must use EVERYTHING here for the default visibility encoding, so that ContextBundle.empty() would correspond
+    // to the data generated for an empty section.
+    public static final BuiltRenderSectionData EMPTY_DATA = new BuiltRenderSectionData();
 
-    // Occlusion Culling State
-    private long visibilityData = VisibilityEncoding.NULL;
-
-    private int incomingDirections;
-    private int lastVisibleFrame = -1;
-
-    private int adjacentMask;
-    public RenderSection
-            adjacentDown,
-            adjacentUp,
-            adjacentNorth,
-            adjacentSouth,
-            adjacentWest,
-            adjacentEast;
-
+    static {
+        EMPTY_DATA.hasBlockGeometry = false;
+        EMPTY_DATA.visibilityData = VisibilityEncoding.EVERYTHING;
+    }
 
     // Rendering State
-    private boolean built = false; // merge with the flags?
-    private int flags = RenderSectionFlags.NONE;
-    private BlockEntity @Nullable[] globalBlockEntities;
-    private BlockEntity @Nullable[] culledBlockEntities;
-    private TextureAtlasSprite @Nullable[] animatedSprites;
+    private BuiltRenderSectionData contextData;
+    private boolean hasAnythingToRender;
+    @Getter
+    private int visualsServiceFlags;
 
     /**
      * A mapping from translucent render passes to the sort state for that particular pass (which contains data needed
@@ -67,6 +52,7 @@ public class RenderSection {
     private TranslucentQuadAnalyzer.Level highestSortingLevel = TranslucentQuadAnalyzer.Level.NONE;
 
     @Getter
+    @Setter
     private boolean needsDynamicTranslucencySorting;
 
     // Pending Update State
@@ -82,55 +68,20 @@ public class RenderSection {
     // Lifetime state
     private boolean disposed;
 
+    @Getter
+    @Setter
+    private long lastBuildDurationNanos;
+
     // Used by the translucency sorter, to determine when a section needs sorting again
     public double lastCameraX, lastCameraY, lastCameraZ;
 
     public RenderSection(RenderRegion region, int chunkX, int chunkY, int chunkZ) {
-        this.chunkX = chunkX;
-        this.chunkY = chunkY;
-        this.chunkZ = chunkZ;
-
-        int rX = this.getChunkX() & (RenderRegion.REGION_WIDTH - 1);
-        int rY = this.getChunkY() & (RenderRegion.REGION_HEIGHT - 1);
-        int rZ = this.getChunkZ() & (RenderRegion.REGION_LENGTH - 1);
-
-        this.sectionIndex = LocalSectionIndex.pack(rX, rY, rZ);
+        super(chunkX, chunkY, chunkZ);
 
         this.region = region;
-    }
 
-    public RenderSection getAdjacent(int direction) {
-        return switch (direction) {
-            case GraphDirection.DOWN -> this.adjacentDown;
-            case GraphDirection.UP -> this.adjacentUp;
-            case GraphDirection.NORTH -> this.adjacentNorth;
-            case GraphDirection.SOUTH -> this.adjacentSouth;
-            case GraphDirection.WEST -> this.adjacentWest;
-            case GraphDirection.EAST -> this.adjacentEast;
-            default -> null;
-        };
-    }
-
-    public void setAdjacentNode(int direction, RenderSection node) {
-        if (node == null) {
-            this.adjacentMask &= ~GraphDirectionSet.of(direction);
-        } else {
-            this.adjacentMask |= GraphDirectionSet.of(direction);
-        }
-
-        switch (direction) {
-            case GraphDirection.DOWN -> this.adjacentDown = node;
-            case GraphDirection.UP -> this.adjacentUp = node;
-            case GraphDirection.NORTH -> this.adjacentNorth = node;
-            case GraphDirection.SOUTH -> this.adjacentSouth = node;
-            case GraphDirection.WEST -> this.adjacentWest = node;
-            case GraphDirection.EAST -> this.adjacentEast = node;
-            default -> { }
-        }
-    }
-
-    public int getAdjacentMask() {
-        return this.adjacentMask;
+        this.contextData = null;
+        this.updateCachedContextDataFlags();
     }
 
     /**
@@ -144,207 +95,49 @@ public class RenderSection {
             this.buildCancellationToken = null;
         }
 
-        this.clearRenderState();
+        this.setInfo(null);
         this.disposed = true;
     }
 
-    public void setInfo(@Nullable BuiltSectionInfo info) {
-        if (info != null) {
-            this.setRenderState(info);
-        } else {
-            this.clearRenderState();
+    public boolean setInfo(@Nullable BuiltRenderSectionData info) {
+        boolean changed = !Objects.equals(info, this.contextData);
+        if (changed) {
+            if (this.contextData == null) {
+                this.getRegion().updateSectionLoadTime(this);
+            }
+            this.contextData = info;
+            this.updateCachedContextDataFlags();
         }
-    }
-
-    private void setRenderState(@NotNull BuiltSectionInfo info) {
-        this.built = true;
-        this.flags = info.flags;
-        this.visibilityData = info.visibilityData;
-        this.globalBlockEntities = info.globalBlockEntities;
-        this.culledBlockEntities = info.culledBlockEntities;
-        this.animatedSprites = info.animatedSprites;
-    }
-
-    private void clearRenderState() {
-        this.built = false;
-        this.flags = RenderSectionFlags.NONE;
-        this.visibilityData = VisibilityEncoding.NULL;
-        this.globalBlockEntities = null;
-        this.culledBlockEntities = null;
-        this.animatedSprites = null;
-    }
-
-    /**
-     * Returns the chunk section position which this render refers to in the world.
-     */
-    public SectionPos getPosition() {
-        return SectionPos.of(this.chunkX, this.chunkY, this.chunkZ);
-    }
-
-    /**
-     * @return The x-coordinate of the origin position of this chunk render
-     */
-    public int getOriginX() {
-        return this.chunkX << 4;
-    }
-
-    /**
-     * @return The y-coordinate of the origin position of this chunk render
-     */
-    public int getOriginY() {
-        return this.chunkY << 4;
-    }
-
-    /**
-     * @return The z-coordinate of the origin position of this chunk render
-     */
-    public int getOriginZ() {
-        return this.chunkZ << 4;
-    }
-
-    /**
-     * @return The squared distance from the center of this chunk in the world to the center of the block position
-     * given by {@param pos}
-     */
-    public float getSquaredDistance(BlockPos pos) {
-        return this.getSquaredDistance(pos.getX() + 0.5f, pos.getY() + 0.5f, pos.getZ() + 0.5f);
-    }
-
-    /**
-     * @return The squared distance from the center of this chunk in the world to the given position
-     */
-    public float getSquaredDistance(float x, float y, float z) {
-        float xDist = x - this.getCenterX();
-        float yDist = y - this.getCenterY();
-        float zDist = z - this.getCenterZ();
-
-        return (xDist * xDist) + (yDist * yDist) + (zDist * zDist);
-    }
-
-    /**
-     * @return The x-coordinate of the center position of this chunk render
-     */
-    public int getCenterX() {
-        return this.getOriginX() + 8;
-    }
-
-    /**
-     * @return The y-coordinate of the center position of this chunk render
-     */
-    public int getCenterY() {
-        return this.getOriginY() + 8;
-    }
-
-    /**
-     * @return The z-coordinate of the center position of this chunk render
-     */
-    public int getCenterZ() {
-        return this.getOriginZ() + 8;
-    }
-
-    public int getChunkX() {
-        return this.chunkX;
-    }
-
-    public int getChunkY() {
-        return this.chunkY;
-    }
-
-    public int getChunkZ() {
-        return this.chunkZ;
+        return changed;
     }
 
     public boolean isDisposed() {
         return this.disposed;
     }
 
-    @Override
-    public String toString() {
-        return String.format("RenderSection at chunk (%d, %d, %d) from (%d, %d, %d) to (%d, %d, %d)",
-                this.chunkX, this.chunkY, this.chunkZ,
-                this.getOriginX(), this.getOriginY(), this.getOriginZ(),
-                this.getOriginX() + 15, this.getOriginY() + 15, this.getOriginZ() + 15);
-    }
-
     public boolean isBuilt() {
-        return this.built;
-    }
-
-    public int getSectionIndex() {
-        return this.sectionIndex;
+        return this.contextData != null;
     }
 
     public RenderRegion getRegion() {
         return this.region;
     }
 
-    public void setLastVisibleFrame(int frame) {
-        this.lastVisibleFrame = frame;
+    public @Nullable BuiltRenderSectionData getBuiltContext() {
+        return this.contextData;
     }
 
-    public int getLastVisibleFrame() {
-        return this.lastVisibleFrame;
+    public void updateCachedContextDataFlags() {
+        this.visualsServiceFlags = this.contextData != null ? this.contextData.getVisualBitmaskForSection() : 0;
+        this.hasAnythingToRender = this.visualsServiceFlags != 0;
     }
 
-    public int getIncomingDirections() {
-        return this.incomingDirections;
-    }
-
-    public void addIncomingDirections(int directions) {
-        this.incomingDirections |= directions;
-    }
-
-    public void setIncomingDirections(int directions) {
-        this.incomingDirections = directions;
-    }
-
-    /**
-     * Returns a bitfield containing the {@link RenderSectionFlags} for this built section.
-     */
-    public int getFlags() {
-        return this.flags;
-    }
-
-    public boolean isAlignedWithSectionOnGrid(int otherX, int otherY, int otherZ) {
-        return this.chunkX == otherX || this.chunkY == otherY || this.chunkZ == otherZ;
-    }
-
-    /**
-     * Returns the occlusion culling data which determines this chunk's connectedness on the visibility graph.
-     */
-    public long getVisibilityData() {
-        return this.visibilityData;
-    }
-
-    /**
-     * Returns the collection of animated sprites contained by this rendered chunk section.
-     */
-    public TextureAtlasSprite @Nullable[] getAnimatedSprites() {
-        return this.animatedSprites;
-    }
-
-    /**
-     * Returns the collection of block entities contained by this rendered chunk.
-     */
-    public BlockEntity @Nullable[] getCulledBlockEntities() {
-        return this.culledBlockEntities;
-    }
-
-    /**
-     * Returns the collection of block entities contained by this rendered chunk, which are not part of its culling
-     * volume. These entities should always be rendered regardless of the render being visible in the frustum.
-     */
-    public BlockEntity @Nullable[] getGlobalBlockEntities() {
-        return this.globalBlockEntities;
-    }
-
-    @Deprecated
-    public boolean containsSortableGeometry() {
-        return !translucencySortStates.isEmpty();
+    public boolean hasAnythingToRender() {
+        return this.hasAnythingToRender;
     }
 
     public void setTranslucencySortStates(@NotNull Map<TerrainRenderPass, TranslucentQuadAnalyzer.SortState> sortStates) {
-        this.translucencySortStates = sortStates;
+        this.translucencySortStates = Map.copyOf(sortStates);
 
         TranslucentQuadAnalyzer.Level level = TranslucentQuadAnalyzer.Level.NONE;
         boolean needsDynamicSorting = false;
@@ -375,6 +168,23 @@ public class RenderSection {
 
     public void setPendingUpdate(@Nullable ChunkUpdateType type) {
         this.pendingUpdateType = type;
+    }
+
+    /**
+     * Request a type of chunk update for this render section. This may "upgrade" an existing pending update for the
+     * section.
+     * @param type the chunk update
+     * @return true if the section's chunk update type has changed
+     */
+    public boolean requestUpdate(ChunkUpdateType type) {
+        type = ChunkUpdateType.getPromotionUpdateType(this.pendingUpdateType, type);
+
+        if (type != null) {
+            this.pendingUpdateType = type;
+            return true;
+        } else {
+            return false;
+        }
     }
 
     public int getLastBuiltFrame() {

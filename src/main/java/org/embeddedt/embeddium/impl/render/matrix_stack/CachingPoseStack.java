@@ -1,5 +1,7 @@
 package org.embeddedt.embeddium.impl.render.matrix_stack;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+
 public interface CachingPoseStack {
     /**
      * Enables or disables caching of matrix entries on the given matrix stack. When enabled, any
@@ -7,4 +9,14 @@ public interface CachingPoseStack {
      * @param flag whether caching should be enabled
      */
     void embeddium$setCachingEnabled(boolean flag);
+
+    /**
+     * @return the last pose of the stack without marking it as escaped
+     */
+    PoseStack.Pose kalium$last();
+
+    interface Pose {
+        boolean kalium$hasEscaped();
+        void kalium$setEscaped();
+    }
 }

@@ -15,11 +15,11 @@ public interface CommandList extends AutoCloseable {
 
     GlImmutableBuffer createImmutableBuffer(long bufferSize, EnumBitField<GlBufferStorageFlags> flags);
 
-    GlTessellation createTessellation(GlPrimitiveType primitiveType, TessellationBinding[] bindings);
-
     void bindVertexArray(GlVertexArray array);
 
     void uploadData(GlMutableBuffer glBuffer, ByteBuffer byteBuffer, GlBufferUsage usage);
+
+    void uploadData(GlMutableBuffer glBuffer, long ptr, long bytes, GlBufferUsage usage);
 
     void copyBufferSubData(GlBuffer src, GlBuffer dst, long readOffset, long writeOffset, long bytes);
 

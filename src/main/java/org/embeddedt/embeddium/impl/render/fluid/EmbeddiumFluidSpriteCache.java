@@ -19,7 +19,7 @@ public class EmbeddiumFluidSpriteCache {
         TextureAtlasSprite sprite = spriteCache.get(identifier);
 
         if (sprite == null) {
-            sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(identifier);
+            sprite = ((TextureAtlas) Minecraft.getInstance().getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS)).getSprite(identifier);
             spriteCache.put(identifier, sprite);
         }
 

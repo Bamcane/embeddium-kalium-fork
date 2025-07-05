@@ -1,12 +1,17 @@
 package org.embeddedt.embeddium.impl.render.chunk.terrain;
 
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.Singular;
 import lombok.experimental.Accessors;
-import net.minecraft.client.renderer.RenderType;
-import org.embeddedt.embeddium.impl.Embeddium;
+import org.embeddedt.embeddium.impl.render.chunk.compile.sorting.ChunkPrimitiveType;
 import org.embeddedt.embeddium.impl.render.chunk.terrain.material.Material;
+import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexType;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * A terrain render pass corresponds to a draw call to render some subset of terrain geometry. Passes are generally
@@ -16,14 +21,20 @@ import org.embeddedt.embeddium.impl.render.chunk.terrain.material.Material;
  * Geometry that shares the same terrain render pass may still be able to specify some more dynamic properties. See {@link Material}
  * for more information.
  */
-@Builder
-@AllArgsConstructor(access = AccessLevel.PACKAGE)
 @Accessors(fluent = true)
+@EqualsAndHashCode
 public class TerrainRenderPass {
     /**
-     * The RenderType that is used to set up/clear GPU pipeline state.
+     * The friendly name of this render pass.
      */
-    private final RenderType layer;
+    @Getter
+    @EqualsAndHashCode.Exclude
+    private final String name;
+
+    /**
+     * A callback used to set up/clear GPU pipeline state.
+     */
+    private final PipelineState pipelineState;
 
     /**
      * Whether sections on this render pass should be rendered farthest-to-nearest, rather than nearest-to-farthest.
@@ -37,36 +48,98 @@ public class TerrainRenderPass {
      * Whether this render pass wants to opt in to translucency sorting if enabled.
      */
     private final boolean useTranslucencySorting;
+    /**
+     * Whether this render pass has no lightmap texture.
+     */
+    private final boolean hasNoLightmap;
 
-    @Deprecated
-    public TerrainRenderPass(RenderType layer, boolean useReverseOrder, boolean allowFragmentDiscard) {
-        this.layer = layer;
+    private final @NotNull ChunkPrimitiveType primitiveType;
+    private final @NotNull ChunkVertexType vertexType;
 
+    private final Map<String, String> extraDefines;
+
+    @Builder
+    public TerrainRenderPass(String name,
+                             PipelineState pipelineState,
+                             boolean useReverseOrder,
+                             boolean fragmentDiscard,
+                             boolean useTranslucencySorting,
+                             boolean hasNoLightmap,
+                             @NotNull ChunkVertexType vertexType,
+                             @NotNull ChunkPrimitiveType primitiveType,
+                             @Singular Map<String, String> extraDefines) {
+        if(name == null || name.length() == 0) {
+            throw new IllegalArgumentException("Name not specified for terrain pass");
+        }
+        Objects.requireNonNull(vertexType);
+        Objects.requireNonNull(primitiveType);
+
+        this.name = name;
+        this.pipelineState = pipelineState;
         this.useReverseOrder = useReverseOrder;
-        this.fragmentDiscard = allowFragmentDiscard;
-        this.useTranslucencySorting = useReverseOrder;
+        this.fragmentDiscard = fragmentDiscard;
+        this.useTranslucencySorting = useTranslucencySorting;
+        this.hasNoLightmap = hasNoLightmap;
+        this.primitiveType = primitiveType;
+        this.vertexType = vertexType;
+        this.extraDefines = Map.copyOf(extraDefines);
     }
-
 
     public boolean isReverseOrder() {
         return this.useReverseOrder;
     }
 
-
     public boolean isSorted() {
-        return this.useTranslucencySorting && Embeddium.canApplyTranslucencySorting();
+        return this.useTranslucencySorting;
+    }
+
+    public boolean hasNoLightmap() {
+        return this.hasNoLightmap;
     }
 
     public void startDrawing() {
-        this.layer.setupRenderState();
+        this.pipelineState.setup();
     }
 
     public void endDrawing() {
-        this.layer.clearRenderState();
+        this.pipelineState.clear();
     }
-
 
     public boolean supportsFragmentDiscard() {
         return this.fragmentDiscard;
+    }
+
+    public ChunkPrimitiveType primitiveType() {
+        return this.primitiveType;
+    }
+
+    public ChunkVertexType vertexType() {
+        return this.vertexType;
+    }
+
+    public Map<String, String> extraDefines() {
+        return this.extraDefines;
+    }
+
+    @Override
+    public String toString() {
+        return "TerrainRenderPass[name=" + this.name + "]";
+    }
+
+    public interface PipelineState {
+        PipelineState DEFAULT = new PipelineState() {
+            @Override
+            public void setup() {
+
+            }
+
+            @Override
+            public void clear() {
+
+            }
+        };
+
+        void setup();
+        void clear();
     }
 }

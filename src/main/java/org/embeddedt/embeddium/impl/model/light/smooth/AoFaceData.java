@@ -1,11 +1,9 @@
 package org.embeddedt.embeddium.impl.model.light.smooth;
 
 import org.embeddedt.embeddium.impl.model.light.data.LightDataAccess;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
+import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
 
-import static org.embeddedt.embeddium.impl.model.light.data.ArrayLightDataCache.*;
+import static org.embeddedt.embeddium.impl.model.light.data.LightDataAccess.*;
 
 class AoFaceData {
     public final int[] lm = new int[4];
@@ -16,11 +14,7 @@ class AoFaceData {
 
     private int flags;
 
-    public void initLightData(LightDataAccess cache, BlockPos pos, Direction direction, boolean offset) {
-        final int x = pos.getX();
-        final int y = pos.getY();
-        final int z = pos.getZ();
-
+    public void initLightData(LightDataAccess cache, int x, int y, int z, ModelQuadFacing direction, boolean offset) {
         final int adjX;
         final int adjY;
         final int adjZ;
@@ -51,7 +45,7 @@ class AoFaceData {
 
         final float caao = unpackAO(adjWord);
 
-        Direction[] faces = AoNeighborInfo.get(direction).faces;
+        ModelQuadFacing[] faces = AoNeighborInfo.get(direction).faces;
 
         final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
         final int e0lm = getLightmap(e0);
@@ -220,16 +214,16 @@ class AoFaceData {
         // FIX: Apply the fullbright lightmap from emissive blocks at the very end so it cannot influence
         // the minimum lightmap and produce incorrect results (for example, sculk sensors in a dark room)
         if (aem) {
-            a = LightTexture.FULL_BRIGHT;
+            a = LightDataAccess.FULL_BRIGHT;
         }
         if (bem) {
-            b = LightTexture.FULL_BRIGHT;
+            b = LightDataAccess.FULL_BRIGHT;
         }
         if (cem) {
-            c = LightTexture.FULL_BRIGHT;
+            c = LightDataAccess.FULL_BRIGHT;
         }
         if (dem) {
-            d = LightTexture.FULL_BRIGHT;
+            d = LightDataAccess.FULL_BRIGHT;
         }
 
         return ((a + b + c + d) >> 2) & 0xFF00FF;

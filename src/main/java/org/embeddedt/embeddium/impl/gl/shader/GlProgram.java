@@ -1,16 +1,16 @@
 package org.embeddedt.embeddium.impl.gl.shader;
 
-import com.mojang.blaze3d.platform.GlStateManager;
 import org.embeddedt.embeddium.impl.gl.GlObject;
+import org.embeddedt.embeddium.impl.gl.debug.GLDebug;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniform;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformBlock;
-import org.embeddedt.embeddium.impl.render.chunk.shader.ShaderBindingContext;
-import net.minecraft.resources.ResourceLocation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL32C;
+import org.lwjgl.opengl.GL43C;
 
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -32,7 +32,7 @@ public class GlProgram<T> extends GlObject implements ShaderBindingContext {
         return this.shaderInterface;
     }
 
-    public static Builder builder(ResourceLocation identifier) {
+    public static Builder builder(String identifier) {
         return new Builder(identifier);
     }
 
@@ -44,29 +44,28 @@ public class GlProgram<T> extends GlObject implements ShaderBindingContext {
         GL20C.glUseProgram(0);
     }
 
-    public void delete() {
+    @Override
+    protected void destroyInternal() {
         GL20C.glDeleteProgram(this.handle());
-
-        this.invalidateHandle();
     }
 
     @Override
-    public <U extends GlUniform<?>> U bindUniform(String name, IntFunction<U> factory) {
+    public <U extends GlUniform<?>> @Nullable U bindUniformIfPresent(String name, IntFunction<U> factory) {
         int index = GL20C.glGetUniformLocation(this.handle(), name);
 
         if (index < 0) {
-            throw new NullPointerException("No uniform exists with name: " + name);
+            return null;
         }
 
         return factory.apply(index);
     }
 
     @Override
-    public GlUniformBlock bindUniformBlock(String name, int bindingPoint) {
+    public @Nullable GlUniformBlock bindUniformBlockIfPresent(String name, int bindingPoint) {
         int index = GL32C.glGetUniformBlockIndex(this.handle(), name);
 
         if (index < 0) {
-            throw new NullPointerException("No uniform block exists with name: " + name);
+            return null;
         }
 
         GL32C.glUniformBlockBinding(this.handle(), index, bindingPoint);
@@ -75,10 +74,10 @@ public class GlProgram<T> extends GlObject implements ShaderBindingContext {
     }
 
     public static class Builder {
-        private final ResourceLocation name;
+        private final String name;
         private final int program;
 
-        public Builder(ResourceLocation name) {
+        public Builder(String name) {
             this.name = name;
             this.program = GL20C.glCreateProgram();
         }
@@ -107,11 +106,13 @@ public class GlProgram<T> extends GlObject implements ShaderBindingContext {
                 LOGGER.warn("Program link log for " + this.name + ": " + log);
             }
 
-            int result = GlStateManager.glGetProgrami(this.program, GL20C.GL_LINK_STATUS);
+            int result = GL20C.glGetProgrami(this.program, GL20C.GL_LINK_STATUS);
 
             if (result != GL20C.GL_TRUE) {
                 throw new RuntimeException("Shader program linking failed, see log for details");
             }
+
+            GLDebug.nameObject(GL43C.GL_PROGRAM, this.program, this.name);
 
             return new GlProgram<>(this.program, factory);
         }

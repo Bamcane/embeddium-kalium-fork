@@ -1,7 +1,6 @@
 package org.embeddedt.embeddium.impl.gui.frame.tab;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import net.minecraft.client.renderer.RenderType;
 import org.embeddedt.embeddium.impl.Embeddium;
 import org.embeddedt.embeddium.impl.gui.widgets.FlatButtonWidget;
 import org.embeddedt.embeddium.api.math.Dim2i;
@@ -26,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+// use some codes from Embeddium
 public class TabHeaderWidget extends FlatButtonWidget {
     private static final ResourceLocation FALLBACK_LOCATION = ResourceLocation.withDefaultNamespace("textures/misc/unknown_pack.png");
 
@@ -55,7 +55,7 @@ public class TabHeaderWidget extends FlatButtonWidget {
                         throw new IOException("Logo " + logoFile.get() + " for " + modId + " is not square");
                     }
                     texture = ResourceLocation.fromNamespaceAndPath(Embeddium.MODID, "logo/" + modId);
-                    Minecraft.getInstance().getTextureManager().register(texture, new DynamicTexture(logo));
+                    Minecraft.getInstance().getTextureManager().register(texture, new DynamicTexture(() -> logo.toString(), logo));
                 }
             } catch(IOException e) {
                 erroredLogos.add(modId);
@@ -82,6 +82,14 @@ public class TabHeaderWidget extends FlatButtonWidget {
         ResourceLocation icon = Objects.requireNonNullElse(this.logoTexture, FALLBACK_LOCATION);
         int fontHeight = Minecraft.getInstance().font.lineHeight;
         int imgY = this.dim.getCenterY() - (fontHeight / 2);
-        drawContext.blit(RenderType::guiTextured, icon, this.dim.x() + 5, imgY, 0.0f, 0.0f, fontHeight, fontHeight, fontHeight, fontHeight);
+        int imgX = this.dim.x() + 5;
+
+        drawContext.blit(
+            icon,
+            imgX, imgY,
+            fontHeight, fontHeight,
+            0.0f, 1.0f,
+            0.0f, 1.0f
+        );
     }
 }

@@ -1,6 +1,5 @@
 package org.embeddedt.embeddium.impl.render.chunk.compile.executor;
 
-import org.apache.commons.lang3.Validate;
 import org.jetbrains.annotations.Nullable;
 import java.util.ArrayDeque;
 import java.util.Collection;
@@ -20,7 +19,9 @@ class ChunkJobQueue {
     }
 
     public void add(ChunkJob job, boolean important) {
-        Validate.isTrue(this.isRunning(), "Queue is no longer running");
+        if (!this.isRunning()) {
+            throw new IllegalStateException("Queue is no longer running");
+        }
 
         if (important) {
             this.jobs.addFirst(job);
@@ -29,6 +30,15 @@ class ChunkJobQueue {
         }
 
         this.semaphore.release(1);
+    }
+
+    @Nullable
+    public ChunkJob pollJob() {
+        if (this.isRunning() && this.semaphore.tryAcquire()) {
+            return this.getNextTask();
+        } else {
+            return null;
+        }
     }
 
     @Nullable

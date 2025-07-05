@@ -4,6 +4,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import org.embeddedt.embeddium.api.options.structure.Option;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -132,12 +134,12 @@ public class SliderControl implements Control<Integer> {
         }
 
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        public boolean mouseClicked(MouseButtonEvent event, boolean isMouseClick) {
             this.sliderHeld = false;
 
-            if (this.option.isAvailable() && button == 0 && this.dim.containsCursor(mouseX, mouseY)) {
-                if (this.sliderBounds.contains((int) mouseX, (int) mouseY)) {
-                    this.setValueFromMouse(mouseX);
+            if (this.option.isAvailable() && event.button() == 0 && this.dim.containsCursor(event.x(), event.y())) {
+                if (this.sliderBounds.contains((int) event.x(), (int) event.y())) {
+                    this.setValueFromMouse(event.x());
                     this.sliderHeld = true;
                 }
 
@@ -162,13 +164,13 @@ public class SliderControl implements Control<Integer> {
         }
 
         @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        public boolean keyPressed(KeyEvent event) {
             if (!isFocused()) return false;
 
-            if (keyCode == InputConstants.KEY_LEFT) {
+            if (event.isLeft()) {
                 this.option.setValue(Mth.clamp(this.option.getValue() - this.interval, this.min, this.max));
                 return true;
-            } else if (keyCode == InputConstants.KEY_RIGHT) {
+            } else if (event.isRight()) {
                 this.option.setValue(Mth.clamp(this.option.getValue() + this.interval, this.min, this.max));
                 return true;
             }
@@ -177,8 +179,8 @@ public class SliderControl implements Control<Integer> {
         }
 
         @Override
-        public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-            if (this.option.isAvailable() && button == 0) {
+        public boolean mouseDragged(MouseButtonEvent event, double mouseX, double mouseY) {
+            if (this.option.isAvailable() && event.button() == 0) {
                 if (this.sliderHeld) {
                     this.setValueFromMouse(mouseX);
                 }

@@ -1,6 +1,5 @@
 package org.embeddedt.embeddium.impl.render.chunk.data;
 
-import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
 import org.lwjgl.system.MemoryUtil;
 
 // This code is a terrible hack to get around the fact that we are so incredibly memory bound, and that we

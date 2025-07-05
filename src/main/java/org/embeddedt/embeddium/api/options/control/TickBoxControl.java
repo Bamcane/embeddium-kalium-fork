@@ -3,7 +3,9 @@ package org.embeddedt.embeddium.api.options.control;
 import org.embeddedt.embeddium.api.options.structure.Option;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.navigation.CommonInputs;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.Rect2i;
 import org.embeddedt.embeddium.impl.gui.theme.DefaultColors;
 
@@ -66,8 +68,8 @@ public class TickBoxControl implements Control<Boolean> {
         }
 
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (this.option.isAvailable() && button == 0 && this.dim.containsCursor(mouseX, mouseY)) {
+        public boolean mouseClicked(MouseButtonEvent event, boolean isMouseClick) {
+            if (this.option.isAvailable() && event.button() == 0 && this.dim.containsCursor(event.x(), event.y())) {
                 toggleControl();
                 this.playClickSound();
 
@@ -78,10 +80,10 @@ public class TickBoxControl implements Control<Boolean> {
         }
 
         @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        public boolean keyPressed(KeyEvent event) {
             if (!isFocused()) return false;
 
-            if (CommonInputs.selected(keyCode)) {
+            if (event.isSelection()) {
                 toggleControl();
                 this.playClickSound();
 

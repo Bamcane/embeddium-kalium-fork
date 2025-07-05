@@ -1,3 +1,4 @@
+//? if >=1.15 {
 package org.embeddedt.embeddium.impl.mixin.core.render.immediate.consumer;
 
 
@@ -42,6 +43,7 @@ public class VertexConsumersMixin {
         }
     }
 
+    //? if >=1.17 {
     @Mixin(targets = "com/mojang/blaze3d/vertex/VertexMultiConsumer$Multiple")
     public static class UnionMixin implements VertexBufferWriter {
         @Shadow
@@ -74,4 +76,6 @@ public class VertexConsumersMixin {
             }
         }
     }
+    //?}
 }
+//?}

@@ -7,7 +7,7 @@ package org.embeddedt.embeddium.impl.gl;
  * relied on too heavily.
  */
 public abstract class GlObject {
-    private static final int INVALID_HANDLE = Integer.MIN_VALUE;
+    private static final int INVALID_HANDLE = 0;
 
     private int handle = INVALID_HANDLE;
 
@@ -35,7 +35,15 @@ public abstract class GlObject {
         return this.handle != INVALID_HANDLE;
     }
 
-    public final void invalidateHandle() {
+    public final void delete() {
+        this.destroyInternal();
         this.handle = INVALID_HANDLE;
     }
+
+    @Deprecated // kept around to avoid huge diffs in old Iris code
+    public final void destroy() {
+        this.delete();
+    }
+
+    protected abstract void destroyInternal();
 }

@@ -2,32 +2,30 @@ modLoader="javafml"
 loaderVersion="[1,)"
 license="LGPL-3.0-only"
 
-[[mixins]]
-config="embeddium.mixins.json"
 
 [[mods]]
 modId="embeddium"
 version="${version}"
-displayName="Embeddium"
+displayName="Kalium"
 logoFile="icon.png"
 description='''
-Embeddium is a performance mod for Minecraft based on the last open-source version of Sodium
+Kalium is a fork of Embeddium, with some codes from Celeritas
 '''
-credits="embeddedt, NanoLive, CaffeineMC"
-authors="embeddedt"
+credits="embeddedt, NanoLive, Bamcane, CaffeineMC"
+authors="Bamcane"
 
-[[dependencies.embeddium]] #optional
+[[dependencies.kalium]] #optional
 modId = "neoforge" #mandatory
 type = "required" #mandatory
 mandatory = true
-versionRange = "[21.1.15,)" #mandatory
+versionRange = "[21.10.12,)" #mandatory
 ordering = "NONE"
 side = "CLIENT"
 
-[[dependencies.embeddium]] #optional
+[[dependencies.kalium]] #optional
 modId = "sodium" #mandatory
 type = "incompatible" #mandatory
-reason="Embeddium cannot be used if Sodium is present. If you want to use Embeddium you will have to remove Sodium."
+reason="Kalium cannot be used if Sodium is present. If you want to use Kalium you will have to remove Sodium."
 versionRange = "[0,)" #mandatory
 ordering = "NONE"
 side = "CLIENT"

@@ -1,7 +1,7 @@
 package org.embeddedt.embeddium.impl.render.chunk.lists;
 
+import org.embeddedt.embeddium.impl.render.chunk.LocalSectionIndex;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSection;
-import org.embeddedt.embeddium.impl.render.chunk.RenderSectionFlags;
 import org.embeddedt.embeddium.impl.util.iterator.ByteIterator;
 import org.embeddedt.embeddium.impl.util.iterator.ReversibleByteArrayIterator;
 import org.embeddedt.embeddium.impl.util.iterator.ByteArrayIterator;
@@ -22,19 +22,8 @@ public class ChunkRenderList {
 
     private int size;
 
-    private int lastVisibleFrame;
-
     public ChunkRenderList(RenderRegion region) {
         this.region = region;
-    }
-
-    public void reset(int frame) {
-        this.sectionsWithGeometryCount = 0;
-        this.sectionsWithSpritesCount = 0;
-        this.sectionsWithEntitiesCount = 0;
-
-        this.size = 0;
-        this.lastVisibleFrame = frame;
     }
 
     public void add(RenderSection render) {
@@ -45,16 +34,16 @@ public class ChunkRenderList {
         this.size++;
 
         int index = render.getSectionIndex();
-        int flags = render.getFlags();
+        int flags = render.getVisualsServiceFlags();
 
         this.sectionsWithGeometry[this.sectionsWithGeometryCount] = (byte) index;
-        this.sectionsWithGeometryCount += (flags >>> RenderSectionFlags.HAS_BLOCK_GEOMETRY) & 1;
+        this.sectionsWithGeometryCount += (flags >>> RenderVisualsService.HAS_BLOCK_GEOMETRY) & 1;
 
         this.sectionsWithSprites[this.sectionsWithSpritesCount] = (byte) index;
-        this.sectionsWithSpritesCount += (flags >>> RenderSectionFlags.HAS_ANIMATED_SPRITES) & 1;
+        this.sectionsWithSpritesCount += (flags >>> RenderVisualsService.HAS_SPRITES) & 1;
 
         this.sectionsWithEntities[this.sectionsWithEntitiesCount] = (byte) index;
-        this.sectionsWithEntitiesCount += (flags >>> RenderSectionFlags.HAS_BLOCK_ENTITIES) & 1;
+        this.sectionsWithEntitiesCount += (flags >>> RenderVisualsService.HAS_BLOCK_ENTITIES) & 1;
     }
 
     public @Nullable ByteIterator sectionsWithGeometryIterator(boolean reverse) {
@@ -93,15 +82,35 @@ public class ChunkRenderList {
         return this.sectionsWithEntitiesCount;
     }
 
-    public int getLastVisibleFrame() {
-        return this.lastVisibleFrame;
-    }
-
     public RenderRegion getRegion() {
         return this.region;
     }
 
     public int size() {
         return this.size;
+    }
+
+    @Override
+    public String toString() {
+        var iterator = this.sectionsWithGeometryIterator(false);
+        if (iterator == null) {
+            return "[]";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        int originX = this.region.getChunkX();
+        int originY = this.region.getChunkY();
+        int originZ = this.region.getChunkZ();
+        while (iterator.hasNext()) {
+            int sectionIndex = iterator.nextByteAsInt();
+            int chunkX = originX + LocalSectionIndex.unpackX(sectionIndex);
+            int chunkY = originY + LocalSectionIndex.unpackY(sectionIndex);
+            int chunkZ = originZ + LocalSectionIndex.unpackZ(sectionIndex);
+            sb.append("(").append(chunkX).append(", ").append(chunkY).append(", ").append(chunkZ).append(")");
+            if (iterator.hasNext()) {
+                sb.append(", ");
+            }
+        }
+        sb.append("]");
+        return sb.toString();
     }
 }

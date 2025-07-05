@@ -1,13 +1,9 @@
 package org.embeddedt.embeddium.impl.mixin.core.world.chunk;
 
+import net.minecraft.world.level.chunk.Strategy;
 import org.embeddedt.embeddium.impl.world.PaletteStorageExtended;
 import org.embeddedt.embeddium.impl.world.ReadableContainerExtended;
-import net.minecraft.util.BitStorage;
-import net.minecraft.world.level.chunk.Palette;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.chunk.PalettedContainer.Data;
-import net.minecraft.world.level.chunk.PalettedContainer.Strategy;
-import net.minecraft.world.level.chunk.PalettedContainerRO;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -22,30 +18,34 @@ public abstract class PalettedContainerMixin<T> implements ReadableContainerExte
 
     @Shadow
     @Final
-    private PalettedContainer.Strategy strategy;
+    private Strategy strategy;
 
     @Shadow
     public abstract PalettedContainer<T> copy();
+
+    private static int strategySize(Strategy strategy) {
+        return strategy.entryCount();
+    }
 
     @Override
     public void sodium$unpack(T[] values) {
         var indexer = Objects.requireNonNull(this.strategy);
 
-        if (values.length != indexer.size()) {
+        if (values.length != strategySize(indexer)) {
             throw new IllegalArgumentException("Array is wrong size");
         }
 
         var data = Objects.requireNonNull(this.data, "PalettedContainer must have data");
 
         var storage = (PaletteStorageExtended) data.storage();
-        storage.sodium$unpack(values, data.palette());
+        storage.sodium$unpack(values, data.palette(), null);
     }
 
     @Override
     public void sodium$unpack(T[] values, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
         var indexer = Objects.requireNonNull(this.strategy);
 
-        if (values.length != indexer.size()) {
+        if (values.length != strategySize(indexer)) {
             throw new IllegalArgumentException("Array is wrong size");
         }
 
@@ -69,7 +69,7 @@ public abstract class PalettedContainerMixin<T> implements ReadableContainerExte
     }
 
     @Override
-    public PalettedContainerRO<T> sodium$copy() {
+    public PalettedContainer<T> sodium$copy() {
         return this.copy();
     }
 }

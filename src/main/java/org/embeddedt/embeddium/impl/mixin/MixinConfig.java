@@ -1,10 +1,9 @@
 package org.embeddedt.embeddium.impl.mixin;
 
-import net.neoforged.fml.loading.FMLLoader;
-import net.neoforged.fml.loading.LoadingModList;
-import net.neoforged.fml.loading.moddiscovery.ModInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.embeddedt.embeddium.api.EmbeddiumConstants;
+import org.embeddedt.embeddium.impl.loader.common.EarlyLoaderServices;
 
 import java.io.*;
 import java.util.HashMap;
@@ -12,16 +11,10 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-import static org.embeddedt.embeddium.impl.Embeddium.MODNAME;
 
-/**
- * <a href="https://github.com/CaffeineMC/sodium-fabric/wiki/Configuration-File">Documentation of these options...</a>
- */
 @SuppressWarnings("CanBeFinal")
 public class MixinConfig {
-    private static final Logger LOGGER = LogManager.getLogger(MODNAME + "Config");
-
-    private static final String JSON_KEY_SODIUM_OPTIONS = "embeddium:options";
+    private static final Logger LOGGER = LogManager.getLogger(EmbeddiumConstants.MODNAME + "Config");
 
     private final Map<String, MixinOption> options = new HashMap<>();
 
@@ -29,20 +22,14 @@ public class MixinConfig {
         // Defines the default rules which can be configured by the user or other mods.
         // You must manually add a rule for any new mixins not covered by an existing package rule.
         this.addMixinRule("core", true); // TODO: Don't actually allow the user to disable this
-        this.addMixinRule("fabric", true);
 
         this.addMixinRule("features", true);
 
         this.addMixinRule("features.gui", true);
 
         this.addMixinRule("features.gui.hooks", true);
-        this.addMixinRule("features.gui.hooks.console", true);
         this.addMixinRule("features.gui.hooks.debug", true);
         this.addMixinRule("features.gui.hooks.settings", true);
-
-        this.addMixinRule("features.gui.screen", true);
-
-        this.addMixinRule("features.model", true);
 
         this.addMixinRule("features.options", true);
         this.addMixinRule("features.options.overlays", true);
@@ -53,7 +40,7 @@ public class MixinConfig {
 
         this.addMixinRule("features.render.entity", true);
         this.addMixinRule("features.render.entity.cull", true);
-        this.addMixinRule("features.render.entity.fast_render", true);
+        this.addMixinRule("features.render.entity.fast_render", false);
         this.addMixinRule("features.render.entity.shadow", true);
 
         this.addMixinRule("features.render.gui", true);
@@ -90,26 +77,10 @@ public class MixinConfig {
         this.addMixinRule("workarounds", true);
         this.addMixinRule("workarounds.context_creation", true);
         this.addMixinRule("workarounds.event_loop", true);
-
-        Pattern replacePattern = Pattern.compile("[^\\w]");
-
-        if (!FMLLoader.getLoadingModList().hasErrors()) {
-            for (ModInfo modInfo : FMLLoader.getLoadingModList().getMods()) {
-                // Convert anything but alphabets and numbers to _
-                String sanitizedModId = replacePattern.matcher(modInfo.getModId()).replaceAll("_");
-                this.addMixinRule("modcompat." + sanitizedModId, true);
-            }
-        }
-
-        this.applyBuiltInCompatOverrides();
     }
 
     private static boolean isModLoaded(String modId) {
-        return LoadingModList.get().getModFileById(modId) != null;
-    }
-
-    private void applyBuiltInCompatOverrides() {
-
+        return EarlyLoaderServices.INSTANCE.isModLoaded(modId);
     }
 
     private void disableIfModPresent(String modId, String option) {
@@ -160,24 +131,7 @@ public class MixinConfig {
     }
 
     private void applyModOverrides() {
-        // Example of how to put overrides into the mods.toml file:
-        // ...
-        // [[mods]]
-        // modId="examplemod"
-        // [mods."sodium:options"]
-        // "features.chunk_rendering"=false
-        // ...
-        for (var meta : LoadingModList.get().getMods()) {
-            meta.getConfigElement(JSON_KEY_SODIUM_OPTIONS).ifPresent(overridesObj -> {
-                if (overridesObj instanceof Map overrides && overrides.keySet().stream().allMatch(key -> key instanceof String)) {
-                    overrides.forEach((key, value) -> {
-                        this.applyModOverride(meta.getModId(), (String)key, value);
-                    });
-                } else {
-                    LOGGER.warn("Mod '{}' contains invalid " + MODNAME + " option overrides, ignoring", meta.getModId());
-                }
-            });
-        }
+        EarlyLoaderServices.INSTANCE.readModMixinConfigOverrides(override -> this.applyModOverride(override.modId(), override.key(), override.value()));
     }
 
     private void applyModOverride(String modid, String name, Object value) {
@@ -281,10 +235,7 @@ public class MixinConfig {
         }
 
         try (Writer writer = new FileWriter(file)) {
-            writer.write("# This is the configuration file for " + MODNAME + ".\n");
-            writer.write("#\n");
-            writer.write("# You can find information on editing this file and all the available options here:\n");
-            writer.write("# https://github.com/CaffeineMC/sodium-fabric/wiki/Configuration-File\n");
+            writer.write("# This is the configuration file for " + EmbeddiumConstants.MODNAME + ".\n");
             writer.write("#\n");
             writer.write("# By default, this file will be empty except for this notice.\n");
         }

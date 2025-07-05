@@ -1,6 +1,20 @@
 <img src="src/main/resources/icon.png" width="128">
 
-# Embeddium
+# Kalium
+Kalium is an unofficial fork of Embeddium in order to support new versions.
+
+Kalium is fully  basd on [Celeritas](https://git.taumc.org/embeddedt/celeritas), which is a fork of Embeddium and Iris by embeddedt.
+
+What I did is just porting the code to 1.21.10 instead of 1.21.1, and planning to release the binary on the Modrinth.
+
+As I am a C developer, I'm bad at Java developing, so I use AI-tools to help me solve some problems. :3
+
+I hopes anyone could create a fork of Kalium. Then I can leave the main position of maintaining Kalium. :3
+
+This project is **not supported by embeddedt**, Do not report issues encountered with it to their gitea or in their Discord.
+- please open an issue on our [Issues page](https://github.com/Bamcane/embeddium-kalium-fork/issues)
+
+# About Embeddium
 
 [![Modrinth Downloads](https://img.shields.io/modrinth/dt/sk9rgfiA?label=Modrinth&labelColor=%232D2D2D)](https://modrinth.com/mod/embeddium)
 [![Modrinth Version](https://img.shields.io/modrinth/v/sk9rgfiA?label=Latest%20version&labelColor=%232D2D2D)](https://modrinth.com/mod/embeddium/versions)
@@ -8,8 +22,6 @@
 [![](http://cf.way2muchnoise.eu/versions/Available%20for_embeddium_full.svg)](https://www.curseforge.com/minecraft/mc-mods/embeddium/files)
 
 Embeddium is a free and open-source performance mod for Minecraft clients. It is based on the last FOSS-licensed version of the Sodium codebase, and includes additional bugfixes & features for better mod compatibility.
-
-Despite being forked from Sodium, Embeddium is **not supported by CaffeineMC**. Do not report issues encountered with it to their bug tracker or in their Discord - please open an issue on our [Issues page](https://github.com/FiniteReality/embeddium/issues).
 
 ## Highlights
 

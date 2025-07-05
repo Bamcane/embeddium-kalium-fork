@@ -3,7 +3,7 @@ package org.embeddedt.embeddium.impl.mixin.features.render.entity.remove_streams
 import com.google.common.collect.ImmutableList;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.minecraft.client.model.geom.ModelPart;
-import org.embeddedt.embeddium.render.entity.ModelPartExtended;
+import org.embeddedt.embeddium.impl.render.entity.ModelPartExtended;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
@@ -19,10 +19,10 @@ public class ModelPartMixin implements ModelPartExtended {
     @Shadow
     @Final
     private Map<String, ModelPart> children;
-    private List<ModelPart> embeddium$allParts;
+    private transient List<ModelPart> embeddium$allParts;
 
-    private Optional<ModelPart> embeddium$optional;
-    private Map<String, ModelPart> embeddium$descendantsByName;
+    private transient Optional<ModelPart> embeddium$optional;
+    private transient Map<String, ModelPart> embeddium$descendantsByName;
 
     @Override
     public Optional<ModelPart> embeddium$asOptional() {
@@ -51,7 +51,7 @@ public class ModelPartMixin implements ModelPartExtended {
             ImmutableList.Builder<ModelPart> listBuilder = ImmutableList.builder();
             listBuilder.add((ModelPart)(Object)this);
             for(ModelPart part : this.children.values()) {
-                listBuilder.addAll(part.getAllParts().toList());
+                listBuilder.addAll(part.getAllParts());
             }
             embeddium$allParts = listBuilder.build();
         }
@@ -67,3 +67,4 @@ public class ModelPartMixin implements ModelPartExtended {
         return embeddium$getPartsList().stream();
     }
 }
+//?}

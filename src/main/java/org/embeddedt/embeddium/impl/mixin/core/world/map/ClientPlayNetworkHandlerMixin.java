@@ -5,7 +5,10 @@ import org.embeddedt.embeddium.impl.render.chunk.map.ChunkTrackerHolder;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
+//? if >=1.18 {
 import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
+//?} else
+/*import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;*/
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,7 +24,7 @@ public class ClientPlayNetworkHandlerMixin {
             method = "applyLightData",
             at = @At("RETURN")
     )
-    private void onLightDataReceived(int x, int z, ClientboundLightUpdatePacketData data, boolean invalidateSection, CallbackInfo ci) {
+    private void onLightDataReceived(int x, int z, ClientboundLightUpdatePacketData data, CallbackInfo ci) {
         ChunkTrackerHolder.get(this.level)
                 .onChunkStatusAdded(x, z, ChunkStatus.FLAG_HAS_LIGHT_DATA);
     }

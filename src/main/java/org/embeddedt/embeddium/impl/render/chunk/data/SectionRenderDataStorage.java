@@ -3,26 +3,40 @@ package org.embeddedt.embeddium.impl.render.chunk.data;
 import org.embeddedt.embeddium.impl.gl.arena.GlBufferSegment;
 import org.embeddedt.embeddium.impl.gl.util.VertexRange;
 import org.embeddedt.embeddium.impl.model.quad.properties.ModelQuadFacing;
+import org.embeddedt.embeddium.impl.render.chunk.compile.sorting.ChunkPrimitiveType;
 import org.embeddedt.embeddium.impl.render.chunk.region.RenderRegion;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.Map;
 
 public class SectionRenderDataStorage {
     private final GlBufferSegment[] allocations = new GlBufferSegment[RenderRegion.REGION_SIZE];
     private final GlBufferSegment[] indexAllocations = new GlBufferSegment[RenderRegion.REGION_SIZE];
 
     private final long pMeshDataArray;
+    private final ChunkPrimitiveType primitiveType;
 
-    public SectionRenderDataStorage() {
+    private int numAllocations;
+
+    public SectionRenderDataStorage(ChunkPrimitiveType primitiveType) {
         this.pMeshDataArray = SectionRenderDataUnsafe.allocateHeap(RenderRegion.REGION_SIZE);
+        if (this.pMeshDataArray == 0) {
+            throw new OutOfMemoryError("Failed to allocate mesh data array");
+        }
+        this.primitiveType = primitiveType;
+    }
+
+    public boolean isEmpty() {
+        return this.numAllocations == 0;
     }
 
     public void setMeshes(int localSectionIndex,
-                          GlBufferSegment allocation, @Nullable GlBufferSegment indexAllocation, VertexRange[] ranges) {
+                          GlBufferSegment allocation, @Nullable GlBufferSegment indexAllocation, Map<ModelQuadFacing, VertexRange> ranges) {
         if (this.allocations[localSectionIndex] != null) {
             this.allocations[localSectionIndex].delete();
             this.allocations[localSectionIndex] = null;
+            this.numAllocations--;
         }
 
         if (this.indexAllocations[localSectionIndex] != null) {
@@ -32,6 +46,7 @@ public class SectionRenderDataStorage {
 
         this.allocations[localSectionIndex] = allocation;
         this.indexAllocations[localSectionIndex] = indexAllocation;
+        this.numAllocations++;
 
         var pMeshData = this.getDataPointer(localSectionIndex);
 
@@ -39,8 +54,11 @@ public class SectionRenderDataStorage {
         int vertexOffset = allocation.getOffset();
         int indexOffset = indexAllocation != null ? indexAllocation.getOffset() * 4 : 0;
 
+        int elementsPerPrimitive = primitiveType.getIndexBufferElementsPerPrimitive();
+        int verticesPerPrimitive = primitiveType.getVerticesPerPrimitive();
+
         for (int facingIndex = 0; facingIndex < ModelQuadFacing.COUNT; facingIndex++) {
-            VertexRange vertexRange = ranges[facingIndex];
+            VertexRange vertexRange = ranges.get(ModelQuadFacing.VALUES[facingIndex]);
             int vertexCount;
 
             if (vertexRange != null) {
@@ -49,7 +67,7 @@ public class SectionRenderDataStorage {
                 vertexCount = 0;
             }
 
-            int indexCount = (vertexCount >> 2) * 6;
+            int indexCount = (vertexCount / verticesPerPrimitive) * elementsPerPrimitive;
 
             SectionRenderDataUnsafe.setVertexOffset(pMeshData, facingIndex, vertexOffset);
             SectionRenderDataUnsafe.setElementCount(pMeshData, facingIndex, indexCount);
@@ -72,6 +90,8 @@ public class SectionRenderDataStorage {
             this.allocations[localSectionIndex] = null;
 
             SectionRenderDataUnsafe.clear(this.getDataPointer(localSectionIndex));
+
+            this.numAllocations--;
         }
 
         removeIndexBuffer(localSectionIndex);
@@ -120,12 +140,15 @@ public class SectionRenderDataStorage {
 
         var data = this.getDataPointer(sectionIndex);
 
+        int elementsPerPrimitive = primitiveType.getIndexBufferElementsPerPrimitive();
+        int verticesPerPrimitive = primitiveType.getVerticesPerPrimitive();
+
         for (int facing = 0; facing < ModelQuadFacing.COUNT; facing++) {
             SectionRenderDataUnsafe.setVertexOffset(data, facing, vertexOffset);
             SectionRenderDataUnsafe.setIndexOffset(data, facing, indexOffset);
 
             var indexCount = SectionRenderDataUnsafe.getElementCount(data, facing);
-            vertexOffset += (indexCount / 6) * 4; // convert elements back into vertices
+            vertexOffset += (indexCount / elementsPerPrimitive) * verticesPerPrimitive; // convert elements back into vertices
             indexOffset += indexCount * 4;
         }
     }
@@ -151,5 +174,7 @@ public class SectionRenderDataStorage {
         Arrays.fill(this.indexAllocations, null);
 
         SectionRenderDataUnsafe.freeHeap(this.pMeshDataArray);
+
+        this.numAllocations = 0;
     }
 }

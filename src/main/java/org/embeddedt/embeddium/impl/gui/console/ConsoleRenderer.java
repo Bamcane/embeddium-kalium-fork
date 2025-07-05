@@ -9,6 +9,7 @@ import net.minecraft.client.StringSplitter;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
@@ -48,8 +49,8 @@ public class ConsoleRenderer {
         Minecraft client = Minecraft.getInstance();
 
         var matrices = context.pose();
-        matrices.pushPose();
-        matrices.translate(0.0f, 0.0f, 1000.0f);
+        matrices.pushMatrix();
+        matrices.translate(0.0f, 0.0f);
 
 
         var paddingWidth = 3;
@@ -128,7 +129,7 @@ public class ConsoleRenderer {
             }
         }
 
-        matrices.popPose();
+        matrices.popMatrix();
     }
 
     private static double getMessageOpacity(ActiveMessage message, double time) {
@@ -175,7 +176,7 @@ public class ConsoleRenderer {
         public static ActiveMessage create(Message message, double timestamp) {
             var text = message.text()
                     .copy()
-                    .withStyle((style) -> style.withFont(Minecraft.UNIFORM_FONT));
+                    .withStyle((style) -> style.withFont(FontDescription.DEFAULT));
 
             return new ActiveMessage(message.level(), text, message.duration(), timestamp);
         }

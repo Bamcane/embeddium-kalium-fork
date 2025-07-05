@@ -2,7 +2,6 @@ package org.embeddedt.embeddium.impl.render.chunk.sorting;
 
 import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import org.embeddedt.embeddium.impl.render.chunk.vertex.format.ChunkVertexEncoder;
-import net.minecraft.util.Mth;
 import org.joml.Vector3f;
 
 import java.util.BitSet;
@@ -34,6 +33,10 @@ public class TranslucentQuadAnalyzer {
         DYNAMIC;
 
         public static final Level[] VALUES = values();
+
+        public boolean requiresDynamicSorting() {
+            return this.ordinal() >= Level.DYNAMIC.ordinal();
+        }
     }
 
     public TranslucentQuadAnalyzer() {
@@ -42,19 +45,23 @@ public class TranslucentQuadAnalyzer {
         }
     }
 
-    public record SortState(Level level, float[] centers, BitSet normalSigns, Vector3f sharedNormal) {
-        public static final SortState NONE = new SortState(Level.NONE, null, null, null);
+    public record SortState(Level level, float[] centers, int centersLength, BitSet normalSigns, Vector3f sharedNormal) {
+        public static final SortState NONE = new SortState(Level.NONE, null, 0, null, null);
 
         public boolean requiresDynamicSorting() {
-            return level.ordinal() >= Level.DYNAMIC.ordinal();
+            return level.requiresDynamicSorting();
         }
 
         public SortState compactForStorage() {
             if(this == NONE || requiresDynamicSorting()) {
                 return this;
             } else {
-                return new SortState(level, null, null, null);
+                return new SortState(level, null, 0, null, null);
             }
+        }
+
+        public static SortState compacted(SortState state) {
+            return state != null ? state.compactForStorage() : null;
         }
     }
 
@@ -66,7 +73,7 @@ public class TranslucentQuadAnalyzer {
         }
     }
 
-    private boolean areAllQuadsOnSamePlane(float[] centerArray) {
+    private boolean areAllQuadsOnSamePlane() {
         // Let globalNormal = (a, b, c). Any plane with this normal vector is denoted by the equation ax + by + cz = d,
         // for some real number d.
         //
@@ -79,13 +86,15 @@ public class TranslucentQuadAnalyzer {
         // easily determine if all quads reside in the same plane by computing this expression for each quad center,
         // and checking that we obtain at most one value.
 
+        var centerArray = quadCenters.elements();
+
         float a = globalNormal.x, b = globalNormal.y, c = globalNormal.z;
         float d = a * centerArray[0] + b * centerArray[1] + c * centerArray[2];
-        int nQuads = centerArray.length / 3;
+        int nQuads = quadCenters.size() / 3;
         for(int quadIdx = 1; quadIdx < nQuads; quadIdx++) {
             int centerOff = quadIdx * 3;
             float candidateD = a * centerArray[centerOff + 0] + b * centerArray[centerOff + 1] + c * centerArray[centerOff + 2];
-            if(!Mth.equal(candidateD, d)) {
+            if(Math.abs(candidateD - d) >= 1.0E-5F) {
                 // Different planes
                 return false;
             }
@@ -96,12 +105,9 @@ public class TranslucentQuadAnalyzer {
 
     public SortState getSortState() {
         if(quadCenters.isEmpty()) {
-            clear();
             return SortState.NONE;
         } else {
             Level sortLevel;
-
-            var centerArray = quadCenters.toArray(new float[0]);
 
             // Figure out what sort level is required
             if(hasDistinctNormals) {
@@ -110,11 +116,21 @@ public class TranslucentQuadAnalyzer {
             } else {
                 // If all quads are on the same plane we can use NONE sorting, otherwise we need to sort statically to put
                 // them in the right order
-                sortLevel = areAllQuadsOnSamePlane(centerArray) ? Level.NONE : Level.STATIC;
+                sortLevel = areAllQuadsOnSamePlane() ? Level.NONE : Level.STATIC;
             }
 
-            SortState finalState = sortLevel == Level.NONE ? SortState.NONE : new SortState(sortLevel, centerArray, cloneBits(normalSigns), new Vector3f(globalNormal));
-            clear();
+            SortState finalState;
+
+            if (sortLevel == Level.NONE) {
+                finalState = SortState.NONE;
+            } else if (sortLevel.requiresDynamicSorting()) {
+                // Clone everything
+                finalState = new SortState(sortLevel, quadCenters.toArray(new float[0]), quadCenters.size(), cloneBits(normalSigns), new Vector3f(globalNormal));
+            } else {
+                // Just make a thin wrapper around our backing objects
+                finalState = new SortState(sortLevel, quadCenters.elements(), quadCenters.size(), normalSigns, globalNormal);
+            }
+
             return finalState;
         }
     }

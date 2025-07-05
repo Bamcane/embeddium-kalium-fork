@@ -1,4 +1,4 @@
-import org.embeddedt.embeddium.gradle.Constants
+import java.util.List;
 
 plugins {
     id("java-library")
@@ -10,7 +10,7 @@ java {
     withSourcesJar()
 }
 
-val extraSourceSets = Constants.EXTRA_SOURCE_SETS
+val extraSourceSets = List.of("compat")
 
 sourceSets {
     val main = getByName("main")

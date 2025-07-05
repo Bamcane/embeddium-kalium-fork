@@ -1,20 +1,16 @@
 package org.embeddedt.embeddium.impl.mixin;
 
-import net.neoforged.fml.ModLoadingIssue;
 import org.embeddedt.embeddium.impl.EmbeddiumPreLaunch;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.loading.FMLLoader;
-import net.neoforged.fml.loading.moddiscovery.ModFile;
-import net.neoforged.fml.loading.moddiscovery.ModFileInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.embeddedt.embeddium.impl.asm.AnnotationProcessingEngine;
-import org.embeddedt.embeddium.impl.config.ConfigMigrator;
-import org.embeddedt.embeddium_integrity.MixinTaintDetector;
+import org.embeddedt.embeddium.impl.asm.ClientLevelLambdaRemover;
+import org.embeddedt.embeddium.impl.loader.common.EarlyLoaderServices;
+import org.embeddedt.embeddium.impl.util.MixinClassValidator;
+import org.embeddedt.embeddium.impl.util.PlatformUtil;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
-import org.spongepowered.asm.service.MixinService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,59 +21,32 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import static org.embeddedt.embeddium.impl.Embeddium.MODNAME;
+import static org.embeddedt.embeddium.api.EmbeddiumConstants.MODNAME;
 
 @SuppressWarnings("unused")
 public class MixinPlugin implements IMixinConfigPlugin {
-    private static final String MIXIN_PACKAGE_ROOT = "org.embeddedt.embeddium.impl.mixin.";
-
     private final Logger logger = LogManager.getLogger(MODNAME);
-    private MixinConfig config;
+    private static MixinConfig config;
+    private String basePackage;
 
-    // TODO handle production
-    private static final boolean RUNNING_ON_FABRIC;
-
-    static {
-        boolean mlPresent;
-        try {
-            Class.forName("cpw.mods.modlauncher.Launcher", false, MixinPlugin.class.getClassLoader());
-            // TODO write proper reflection-based fabric detector that won't see Connector
-            String mixinService = System.getProperty("mixin.service");
-            mlPresent = mixinService == null || !mixinService.contains("MixinServiceKnot");
-        } catch(ReflectiveOperationException e) {
-            mlPresent = false;
-        }
-
-        RUNNING_ON_FABRIC = !mlPresent;
-    }
-
-    private static final Set<String> BLACKLISTED_MIXINS = !RUNNING_ON_FABRIC ? Set.of() : Set.of(
-            "features.render.model.ChunkRenderTypeSetMixin"
-    );
+    private static boolean hasLoaded;
 
     @Override
     public void onLoad(String mixinPackage) {
-        try {
-            this.config = MixinConfig.load(ConfigMigrator.handleConfigMigration("embeddium-mixins.properties").toFile());
-        } catch (Exception e) {
-            throw new RuntimeException("Could not load configuration file for " + MODNAME, e);
-        }
+        this.basePackage = mixinPackage;
 
-        this.logger.info("Loaded configuration file for " + MODNAME + ": {} options available, {} override(s) found",
-                this.config.getOptionCount(), this.config.getOptionOverrideCount());
-
-        EmbeddiumPreLaunch.onPreLaunch();
-
-        MixinTaintDetector.initialize();
-
-        // Detect known bypasses of the taint detector
-        try {
-            // https://github.com/dima-dencep/NanoLiveConfig/commit/841e17eacca2d3a1e12b025fc490f392d202ea73
-            if(MixinService.getService().getBytecodeProvider().getClassNode("net.caffeinemc.caffeineconfig.AdvancedEmbeddiumHackery") != null) {
-                FMLLoader.getLoadingModList().getModLoadingIssues().add(ModLoadingIssue.error("Rubidium/Embeddium Extra by dima_dencep hacks Embeddium to prevent accurate detection of mods causing game issues, it is not supported"));
+        if (!hasLoaded) {
+            hasLoaded = true;
+            try {
+                config = MixinConfig.load(PlatformUtil.getConfigDir().resolve("embeddium-mixins.properties").toFile());
+            } catch (Exception e) {
+                throw new RuntimeException("Could not load configuration file for " + MODNAME, e);
             }
-        } catch (ClassNotFoundException | IOException ignored) {
-            // no problem
+
+            this.logger.info("Loaded configuration file for " + MODNAME + ": {} options available, {} override(s) found",
+                    config.getOptionCount(), config.getOptionOverrideCount());
+
+            EmbeddiumPreLaunch.onPreLaunch();
         }
     }
 
@@ -87,20 +56,15 @@ public class MixinPlugin implements IMixinConfigPlugin {
     }
 
     @Override
-    public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+    public boolean shouldApplyMixin(String s, String s1) {
         return true;
     }
 
     private boolean isMixinEnabled(String mixin) {
-        MixinOption option = this.config.getEffectiveOptionForMixin(mixin);
+        MixinOption option = config.getEffectiveOptionForMixin(mixin);
 
         if (option == null) {
-            // Missing modcompat options are fine
-            if(!mixin.startsWith("modcompat.")) {
-                this.logger.error("No rules matched mixin '{}', treating as foreign and disabling!", mixin);
-            }
-
-            return false;
+            return true;
         }
 
         if (option.isOverridden()) {
@@ -139,26 +103,15 @@ public class MixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        if (FMLLoader.getDist() != Dist.CLIENT) {
+        if (!EarlyLoaderServices.INSTANCE.getDistribution().isClient()) {
             return null;
         }
 
-        ModFileInfo modFileInfo = FMLLoader.getLoadingModList().getModFileById("embeddium");
-
-        if (modFileInfo == null) {
-            // Probably a load error
-            logger.error("Could not find embeddium mod, there is likely a dependency error. Skipping mixin application.");
-            return null;
-        }
-
-        ModFile modFile = modFileInfo.getFile();
         Set<Path> rootPaths = new HashSet<>();
-        // This allows us to see it from multiple sourcesets if need be
-        for(String basePackage : new String[] { "core", "modcompat", "fabric" }) {
-            Path mixinPackagePath = modFile.findResource("org", "embeddedt", "embeddium", "impl", "mixin", basePackage);
-            if(Files.exists(mixinPackagePath)) {
-                rootPaths.add(mixinPackagePath.getParent().toAbsolutePath());
-            }
+
+        Path mixinPackagePath = EarlyLoaderServices.INSTANCE.findEarlyMixinFolder(basePackage.replace('.', '/') + "/");
+        if(mixinPackagePath != null) {
+            rootPaths.add(mixinPackagePath.toAbsolutePath());
         }
 
         Set<String> possibleMixinClasses = new HashSet<>();
@@ -174,8 +127,6 @@ public class MixinPlugin implements IMixinConfigPlugin {
                 e.printStackTrace();
             }
         }
-
-        possibleMixinClasses.removeAll(BLACKLISTED_MIXINS);
 
         return new ArrayList<>(possibleMixinClasses);
     }
