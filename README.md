@@ -1,5 +1,7 @@
 <img src="src/main/resources/icon.png" width="128">
 
+> This branch came from official Embeddium, without any change else.
+
 # Embeddium
 
 [![Modrinth Downloads](https://img.shields.io/modrinth/dt/sk9rgfiA?label=Modrinth&labelColor=%232D2D2D)](https://modrinth.com/mod/embeddium)
