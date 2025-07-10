@@ -3,7 +3,7 @@ package org.embeddedt.embeddium.impl.mixin.features.render.world.sky;
 import org.embeddedt.embeddium.impl.util.color.FastCubicSampler;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.FogRenderer;
+import net.minecraft.client.renderer.fog.FogRenderer;
 import net.minecraft.util.CubicSampler;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;

@@ -1,6 +1,6 @@
 package org.embeddedt.embeddium.impl.gl.shader;
 
-import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import org.embeddedt.embeddium.impl.gl.GlObject;
 import net.minecraft.resources.ResourceLocation;
 import org.apache.logging.log4j.LogManager;

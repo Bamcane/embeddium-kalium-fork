@@ -2,11 +2,11 @@ package org.embeddedt.embeddium.api.render.chunk;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.renderer.block.model.BlockStateModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.model.data.ModelData;
 import org.embeddedt.embeddium.impl.render.matrix_stack.CachingPoseStack;
 import org.embeddedt.embeddium.impl.render.world.WorldSliceLocalGenerator;
 import org.joml.Vector3f;
@@ -27,7 +27,7 @@ public class BlockRenderContext {
     private final PoseStack stack = new PoseStack();
 
     private BlockState state;
-    private BakedModel model;
+    private BlockStateModel model;
 
     private long seed;
 
@@ -41,7 +41,7 @@ public class BlockRenderContext {
         ((CachingPoseStack)this.stack).embeddium$setCachingEnabled(true);
     }
 
-    public void update(BlockPos pos, BlockPos origin, BlockState state, BakedModel model, long seed, ModelData modelData, RenderType renderLayer) {
+    public void update(BlockPos pos, BlockPos origin, BlockState state, BlockStateModel model, long seed, ModelData modelData, RenderType renderLayer) {
         this.pos.set(pos);
         this.origin.set(origin.getX(), origin.getY(), origin.getZ());
 
@@ -92,7 +92,7 @@ public class BlockRenderContext {
     /**
      * @return The model used for this block
      */
-    public BakedModel model() {
+    public BlockStateModel model() {
         return this.model;
     }
 

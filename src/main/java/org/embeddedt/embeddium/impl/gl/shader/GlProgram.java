@@ -1,6 +1,6 @@
 package org.embeddedt.embeddium.impl.gl.shader;
 
-import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import org.embeddedt.embeddium.impl.gl.GlObject;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniform;
 import org.embeddedt.embeddium.impl.gl.shader.uniform.GlUniformBlock;

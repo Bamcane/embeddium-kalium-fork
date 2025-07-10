@@ -8,7 +8,6 @@ import org.embeddedt.embeddium.impl.gl.sync.GlFence;
 import org.embeddedt.embeddium.impl.gl.tessellation.*;
 import org.embeddedt.embeddium.impl.gl.util.EnumBitField;
 import org.lwjgl.opengl.*;
-import com.mojang.blaze3d.vertex.BufferUploader;
 import java.nio.ByteBuffer;
 
 public class GLRenderDevice implements RenderDevice {
@@ -33,8 +32,6 @@ public class GLRenderDevice implements RenderDevice {
         if (this.isActive) {
             return;
         }
-
-        BufferUploader.reset();
 
         this.stateTracker.clear();
         this.isActive = true;

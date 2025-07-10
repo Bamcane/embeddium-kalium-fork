@@ -32,7 +32,6 @@ base {
 }
 
 repositories {
-    maven("https://maven.neoforged.net/")
     maven("https://libraries.minecraft.net")
     mavenCentral()
     maven("https://maven.fabricmc.net")
@@ -61,6 +60,7 @@ configurations {
 }
 
 dependencies {
+    implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
     // FIXME remove when NG not loading this from NF itself is fixed
     // implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
 

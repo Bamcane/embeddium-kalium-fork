@@ -1,6 +1,6 @@
 package org.embeddedt.embeddium.impl.model;
 
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.QuadCollection;
 import net.minecraft.util.RandomSource;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,11 +13,11 @@ public interface UnwrappableBakedModel {
      * adjusted to accommodate any changes the wrapping model would normally be making to it. As such, you should
      * only return a non-null value if the RandomSource is not used by the inner model.
      */
-    @Nullable BakedModel embeddium$getInnerModel(RandomSource rand);
+    @Nullable QuadCollection embeddium$getInnerModel(RandomSource rand);
 
-    static BakedModel unwrapIfPossible(BakedModel incoming, RandomSource rand) {
+    static QuadCollection unwrapIfPossible(QuadCollection incoming, RandomSource rand) {
         if(incoming instanceof UnwrappableBakedModel) {
-            BakedModel m = ((UnwrappableBakedModel)incoming).embeddium$getInnerModel(rand);
+            QuadCollection m = ((UnwrappableBakedModel)incoming).embeddium$getInnerModel(rand);
             if(m != null) {
                 return m;
             }

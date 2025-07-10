@@ -1,7 +1,5 @@
 package org.embeddedt.embeddium.impl.bootstrap;
 
-import cpw.mods.modlauncher.Launcher;
-import cpw.mods.modlauncher.api.IModuleLayerManager;
 import org.embeddedt.embeddium.impl.Embeddium;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.loading.ImmediateWindowHandler;
@@ -63,7 +61,6 @@ public class EmbeddiumEarlyWindowHacks {
         var modInfo = LoadingModList.get().getModFileById(Embeddium.MODID);
         String ourVersion = modInfo != null ? modInfo.versionString() : "unknown";
         StartupNotificationManager.modLoaderConsumer().ifPresent(c -> c.accept("Embeddium " + ourVersion));
-        ImmediateWindowHandler.acceptGameLayer(Launcher.INSTANCE.findLayerManager().orElseThrow().getLayer(IModuleLayerManager.Layer.GAME).orElseThrow());
 
         // Workaround for Forge bug: make sure windowTick is actually populated before continuing
         try {

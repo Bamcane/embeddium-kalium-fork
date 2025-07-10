@@ -1,12 +1,10 @@
 package org.embeddedt.embeddium.impl.gui;
 
 import com.google.common.collect.ImmutableList;
-import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.ChatFormatting;
 import net.minecraft.server.level.ParticleStatus;
-import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.common.NeoForgeConfig;
+import net.neoforged.neoforge.client.config.NeoForgeClientConfig;
 import org.embeddedt.embeddium.api.options.structure.OptionFlag;
 import org.embeddedt.embeddium.api.options.structure.OptionGroup;
 import org.embeddedt.embeddium.api.options.structure.OptionImpact;
@@ -193,13 +191,6 @@ public class EmbeddiumGameOptionPages {
                         .setControl(option -> new CyclingControl<>(option, CloudStatus.class, new Component[] { Component.translatable("options.off"), Component.translatable("options.graphics.fast"), Component.translatable("options.graphics.fancy") }))
                         .setBinding((opts, value) -> {
                             opts.cloudStatus().set(value);
-
-                            if (Minecraft.useShaderTransparency()) {
-                                RenderTarget framebuffer = Minecraft.getInstance().levelRenderer.getCloudsTarget();
-                                if (framebuffer != null) {
-                                    framebuffer.clear();
-                                }
-                            }
                         }, opts -> opts.cloudStatus().get())
                         .setImpact(OptionImpact.LOW)
                         .build())
@@ -308,7 +299,7 @@ public class EmbeddiumGameOptionPages {
                         .setControl(TickBoxControl::new)
                         .setImpact(OptionImpact.LOW)
                         .setBinding((opts, value) -> opts.quality.useQuadNormalsForShading = value, opts -> opts.quality.useQuadNormalsForShading)
-                        .setEnabled(!NeoForgeConfig.CLIENT.experimentalForgeLightPipelineEnabled.get())
+                        .setEnabled(!NeoForgeClientConfig.INSTANCE.enhancedLighting.get())
                         .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
                         .build())
                 .build());

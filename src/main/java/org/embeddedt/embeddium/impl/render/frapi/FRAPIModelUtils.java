@@ -1,7 +1,7 @@
 package org.embeddedt.embeddium.impl.render.frapi;
 
 import net.fabricmc.fabric.api.renderer.v1.model.FabricBakedModel;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.QuadCollection;
 
 public class FRAPIModelUtils {
     public static boolean isFRAPIModel(BakedModel model) {

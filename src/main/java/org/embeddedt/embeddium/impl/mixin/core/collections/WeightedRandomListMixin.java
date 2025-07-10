@@ -2,8 +2,8 @@ package org.embeddedt.embeddium.impl.mixin.core.collections;
 
 import com.google.common.collect.ImmutableList;
 import net.minecraft.util.RandomSource;
-import net.minecraft.util.random.WeightedEntry;
-import net.minecraft.util.random.WeightedRandomList;
+import net.minecraft.util.random.Weighted;
+import net.minecraft.util.random.WeightedList;
 import org.embeddedt.embeddium.impl.util.collections.WeightedRandomListExtended;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
@@ -13,8 +13,8 @@ import org.spongepowered.asm.mixin.Unique;
 
 import java.util.List;
 
-@Mixin(WeightedRandomList.class)
-public class WeightedRandomListMixin<E extends WeightedEntry> implements WeightedRandomListExtended<E> {
+@Mixin(WeightedList.class)
+public class WeightedRandomListMixin<E extends Weighted> implements WeightedRandomListExtended<E> {
     @Shadow
     @Final
     private ImmutableList<E> items;
@@ -30,7 +30,7 @@ public class WeightedRandomListMixin<E extends WeightedEntry> implements Weighte
     }
 
     @Unique
-    private static <T extends WeightedEntry> T getAt(List<T> pool, int totalWeight) {
+    private static <T extends Weighted> T getAt(List<T> pool, int totalWeight) {
         int i = 0;
         int len = pool.size();
         T weighted;

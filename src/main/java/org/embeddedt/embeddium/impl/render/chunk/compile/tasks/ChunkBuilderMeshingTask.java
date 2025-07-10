@@ -20,9 +20,10 @@ import net.minecraft.CrashReportCategory;
 import net.minecraft.ReportedException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.model.BlockStateModel;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.chunk.VisGraph;
-import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.QuadCollection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.RenderShape;
@@ -31,7 +32,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.model.data.ModelData;
 import org.embeddedt.embeddium.api.ChunkDataBuiltEvent;
 import org.embeddedt.embeddium.impl.chunk.MeshAppenderRenderer;
 import org.embeddedt.embeddium.impl.model.UnwrappableBakedModel;
@@ -114,7 +115,7 @@ public class ChunkBuilderMeshingTask extends ChunkBuilderTask<ChunkBuildOutput> 
                         modelOffset.set(x & 15, y & 15, z & 15);
 
                         if (blockState.getRenderShape() == RenderShape.MODEL) {
-                            BakedModel model = cache.getBlockModels()
+                            BlockStateModel model = cache.getBlockModels()
                                 .getBlockModel(blockState);
                             ModelData modelData = model.getModelData(context.localSlice(), blockPos, blockState, slice.getModelData(blockPos));
 
