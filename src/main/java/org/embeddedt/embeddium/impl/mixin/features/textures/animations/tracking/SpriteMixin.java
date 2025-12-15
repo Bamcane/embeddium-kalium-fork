@@ -15,45 +15,10 @@ import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin(TextureAtlasSprite.class)
 public class SpriteMixin
-    //? if >=1.20 {
 {
     @Shadow
     @Final
     private SpriteContents contents;
-    //?} else {
-/*implements SpriteContentsExtended {
-
-    //? if >=1.17 {
-    @Shadow
-    @Final
-    @Nullable
-    private TextureAtlasSprite.AnimatedTexture animatedTexture;
-    //?} else {
-    /^@Shadow
-    public boolean isAnimation() { throw new AssertionError(); }
-    ^///?}
-
-    @Unique
-    private boolean active;
-
-    @Override
-    public void sodium$setActive(boolean value) {
-        this.active = value;
-    }
-
-    @Override
-    public boolean sodium$hasAnimation() {
-        //? if >=1.17 {
-        return this.animatedTexture != null;
-        //?} else
-        /^return isAnimation();^/
-    }
-
-    @Override
-    public boolean sodium$isActive() {
-        return this.active;
-    }
-    *///?}
 
     /**
      * @author embeddedt

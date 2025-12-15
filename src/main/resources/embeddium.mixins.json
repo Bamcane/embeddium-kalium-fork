@@ -1,5 +1,6 @@
 {
   "package" : "org.embeddedt.embeddium.impl.mixin",
+  "refmap": "embeddium-refmap.json",
   "required" : true,
   "minVersion": "0.8",
   "compatibilityLevel" : "JAVA_21",

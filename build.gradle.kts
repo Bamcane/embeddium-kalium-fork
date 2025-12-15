@@ -60,10 +60,6 @@ configurations {
 }
 
 dependencies {
-    implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
-    // FIXME remove when NG not loading this from NF itself is fixed
-    // implementation("io.github.llamalad7:mixinextras-neoforge:0.3.5")
-
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")
 }

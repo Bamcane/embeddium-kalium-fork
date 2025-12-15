@@ -1,13 +1,18 @@
 package org.embeddedt.embeddium.impl.loader.forge;
 
+import net.neoforged.fml.jarcontents.JarResourceVisitor;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.loading.LoadingModList;
 import net.neoforged.fml.loading.moddiscovery.ModFile;
 import net.neoforged.fml.loading.moddiscovery.ModFileInfo;
 import net.neoforged.fml.loading.moddiscovery.ModInfo;
+import net.neoforged.neoforge.resource.JarContentsPackResources;
+import net.neoforged.neoforge.resource.ResourcePackLoader;
 
 import org.embeddedt.embeddium.impl.loader.common.Distribution;
 import org.embeddedt.embeddium.impl.loader.common.EarlyLoaderServices;
+
+import static org.embeddedt.embeddium.impl.Embeddium.logger;
 
 import java.net.URI;
 import java.nio.file.Files;
@@ -31,15 +36,8 @@ public class FMLEarlyLoaderServices implements EarlyLoaderServices {
 
         ModFile modFile = modFileInfo.getFile();
 
-        URI mixinPackagePath = null;
-        try
-        {
-            mixinPackagePath = modFile.getContents().findFile(path).orElseThrow();
-        } catch(RuntimeException e) {
-            return null;
-        }
-        if(Files.exists(Paths.get(mixinPackagePath)))
-            return Paths.get(mixinPackagePath);
+        if(modFile.getContents().containsFile(path + "MixinPlugin.class"))
+            return Paths.get(path);
         else
             return null;
     }

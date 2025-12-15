@@ -61,7 +61,7 @@ public class ScrollBarComponent extends AbstractWidget {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean isMouseClick) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         if (this.dim.containsCursor(event.x(), event.y())) {
             if (this.scrollThumb.containsCursor(event.x(), event.y())) {
                 if (this.mode == Mode.VERTICAL) {

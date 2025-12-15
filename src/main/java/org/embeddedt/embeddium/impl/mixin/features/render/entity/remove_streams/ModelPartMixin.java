@@ -63,8 +63,8 @@ public class ModelPartMixin implements ModelPartExtended {
      * @reason heavily reduce stream allocations
      */
     @Overwrite
-    public Stream<ModelPart> getAllParts() {
-        return embeddium$getPartsList().stream();
+    public List<ModelPart> getAllParts() {
+        return embeddium$getPartsList();
     }
 }
 //?}

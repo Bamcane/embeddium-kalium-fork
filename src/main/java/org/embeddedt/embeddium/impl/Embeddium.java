@@ -17,6 +17,7 @@ import org.embeddedt.embeddium.impl.sodium.FlawlessFrames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.fml.loading.FMLLoader;
 
 import java.io.IOException;
 
@@ -35,10 +36,8 @@ public class Embeddium {
         MOD_VERSION = modContainer.getModInfo().getVersion().toString();
         modContainer.registerExtensionPoint(IConfigScreenFactory.class, (mc, screen) -> new EmbeddiumVideoOptionsScreen(screen, EmbeddiumVideoOptionsScreen.makePages()));
 
-        try {
-            updateFingerprint();
-        } catch (Throwable t) {
-            LOGGER.error("Failed to update fingerprint", t);
+        if (!FMLLoader.getCurrent().getDist().isClient()) {
+            return;
         }
 
         modEventBus.addListener(this::onClientSetup);
@@ -94,35 +93,6 @@ public class Embeddium {
         }
 
         return MOD_VERSION;
-    }
-
-    private static void updateFingerprint() {
-        var current = FingerprintMeasure.create();
-
-        if (current == null) {
-            return;
-        }
-
-        HashedFingerprint saved = null;
-
-        try {
-            saved = HashedFingerprint.loadFromDisk();
-        } catch (Throwable t) {
-            LOGGER.error("Failed to load existing fingerprint",  t);
-        }
-
-        if (saved == null || !current.looselyMatches(saved)) {
-            HashedFingerprint.writeToDisk(current.hashed());
-
-            CONFIG.notifications.hasSeenDonationPrompt = false;
-            CONFIG.notifications.hasClearedDonationButton = false;
-
-            try {
-                EmbeddiumOptions.writeToDisk(CONFIG);
-            } catch (IOException e) {
-                LOGGER.error("Failed to update config file", e);
-            }
-        }
     }
 
     public static boolean canUseVanillaVertices() {

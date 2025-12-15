@@ -2,6 +2,8 @@ modLoader="javafml"
 loaderVersion="[1,)"
 license="LGPL-3.0-only"
 
+[[mixins]]
+config="embeddium.mixins.json"
 
 [[mods]]
 modId="embeddium"
@@ -9,7 +11,7 @@ version="${version}"
 displayName="Kalium"
 logoFile="icon.png"
 description='''
-Kalium is a fork of Embeddium, with some codes from Celeritas
+Kalium is a fork of Embeddium, with codes from Celeritas
 '''
 credits="embeddedt, NanoLive, Bamcane, CaffeineMC"
 authors="Bamcane"

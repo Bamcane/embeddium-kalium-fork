@@ -3,19 +3,18 @@ package org.embeddedt.embeddium.impl.gui.widgets;
 import org.embeddedt.embeddium.api.math.Dim2i;
 import net.minecraft.client.gui.ComponentPath;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.navigation.FocusNavigationEvent;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.embeddedt.embeddium.impl.gui.theme.DefaultColors;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.Objects;
 
-public class FlatButtonWidget extends AbstractWidget implements Renderable {
+public class FlatButtonWidget extends AbstractWidget {
     protected final Dim2i dim;
     private final Runnable action;
 
@@ -86,14 +85,14 @@ public class FlatButtonWidget extends AbstractWidget implements Renderable {
         this.leftAligned = leftAligned;
     }
 
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean isDoubleClick) {
         if (!this.enabled || !this.visible) {
             return false;
         }
 
-        if (button == 0 && this.dim.containsCursor(mouseX, mouseY)) {
+        if (event.button() == 0 && this.isHovered()) {
             doAction();
-
             return true;
         }
 

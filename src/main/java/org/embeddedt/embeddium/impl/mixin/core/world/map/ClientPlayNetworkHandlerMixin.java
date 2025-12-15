@@ -24,7 +24,7 @@ public class ClientPlayNetworkHandlerMixin {
             method = "applyLightData",
             at = @At("RETURN")
     )
-    private void onLightDataReceived(int x, int z, ClientboundLightUpdatePacketData data, CallbackInfo ci) {
+    private void onLightDataReceived(int x, int z, ClientboundLightUpdatePacketData data, boolean update, CallbackInfo ci) {
         ChunkTrackerHolder.get(this.level)
                 .onChunkStatusAdded(x, z, ChunkStatus.FLAG_HAS_LIGHT_DATA);
     }

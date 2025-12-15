@@ -12,9 +12,16 @@ import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
+import lombok.Getter;
+import net.neoforged.fml.jarcontents.JarResource;
+import net.neoforged.fml.jarcontents.JarResourceVisitor;
+import net.neoforged.fml.loading.FMLLoader;
+import net.neoforged.fml.loading.moddiscovery.ModFileInfo;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -111,21 +118,43 @@ public class MixinPlugin implements IMixinConfigPlugin {
 
         Path mixinPackagePath = EarlyLoaderServices.INSTANCE.findEarlyMixinFolder(basePackage.replace('.', '/') + "/");
         if(mixinPackagePath != null) {
-            rootPaths.add(mixinPackagePath.toAbsolutePath());
+            this.logger.info("mixin package path is founded: {}", mixinPackagePath.toString());
+            rootPaths.add(mixinPackagePath);
         }
+        ModFileInfo modFileInfo = FMLLoader.getCurrent().getLoadingModList().getModFileById("embeddium");
 
         Set<String> possibleMixinClasses = new HashSet<>();
-        for(Path rootPath : rootPaths) {
-            try(Stream<Path> mixinStream = Files.find(rootPath, Integer.MAX_VALUE, (path, attrs) -> attrs.isRegularFile() && path.getFileName().toString().endsWith(".class"))) {
-                mixinStream
-                        .map(Path::toAbsolutePath)
-                        .filter(MixinClassValidator::isMixinClass)
-                        .map(path -> mixinClassify(rootPath, path))
-                        .filter(this::isMixinEnabled)
-                        .forEach(possibleMixinClasses::add);
-            } catch(IOException e) {
-                e.printStackTrace();
+        var visitor = new JarResourceVisitor() {
+            public Path rootPath;
+
+            @Override
+            public void visit(String relativePath, JarResource resource) {
+                if(!relativePath.endsWith(".class")) {
+                    logger.warn("file {} is not mixin class", relativePath);
+                    return;
+                }
+
+                Path path = Paths.get(relativePath);
+                try {
+                    byte[] classBytes = resource.readAllBytes();
+                    if (!MixinClassValidator.isMixinClass(classBytes)) {
+                        logger.warn("class {} is not mixin class", relativePath);
+                        return;
+                    }
+                    String classified = mixinClassify(rootPath, path);
+                    if (isMixinEnabled(classified)) {
+                        possibleMixinClasses.add(classified);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    return;
+                }
             }
+            
+        };
+        for(Path rootPath : rootPaths) {
+            visitor.rootPath = rootPath;
+            modFileInfo.getFile().getContents().visitContent(rootPath.toString(), visitor);
         }
 
         return new ArrayList<>(possibleMixinClasses);
